@@ -12,5 +12,8 @@ pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{
     EggEntity, EnderPearlEntity, FireworkRocketEntity, SnowballEntity,
 };
-pub use objects::vehicles::ChestMinecartEntity;
+pub use objects::vehicles::{
+    ChestMinecartEntity, CommandBlockMinecartEntity, FurnaceMinecartEntity, HopperMinecartEntity,
+    MinecartEntity, SpawnerMinecartEntity, TntMinecartEntity,
+};
 pub use raw::RawEntity;
