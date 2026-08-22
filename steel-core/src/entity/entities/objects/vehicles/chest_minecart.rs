@@ -8,6 +8,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_entity_data::ChestMinecartEntityData;
 use steel_utils::Identifier;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
@@ -15,7 +16,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    Entity, EntityBase, EntityBaseLoad, EntitySyncedData,
+    reset_forward_direction_of_relative_portal_position,
 };
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
@@ -30,6 +32,7 @@ pub struct ChestMinecartEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     state: SyncMutex<ChestMinecartState>,
+    entity_data: SyncMutex<ChestMinecartEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ChestMinecartEntity`.
@@ -62,6 +65,7 @@ impl ChestMinecartEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             state: SyncMutex::new(ChestMinecartState::new(true)),
+            entity_data: SyncMutex::new(ChestMinecartEntityData::new()),
         }
     }
 
@@ -72,6 +76,7 @@ impl ChestMinecartEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             state: SyncMutex::new(ChestMinecartState::new(false)),
+            entity_data: SyncMutex::new(ChestMinecartEntityData::new()),
         }
     }
 
@@ -94,6 +99,10 @@ impl Entity for ChestMinecartEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn is_pickable(&self) -> bool {

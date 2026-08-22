@@ -1,4 +1,4 @@
-//! Vanilla Zombie entity with AI goals and behavior.
+//! Vanilla Endermite entity with AI goals and lifetime despawning behavior.
 
 use std::sync::Weak;
 
@@ -9,7 +9,7 @@ use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_entity_data::ZombieEntityData;
+use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
@@ -21,30 +21,36 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
-    MobBase, PathfinderMob,
+    MobBase, PathfinderMob, RemovalReason,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
+/// Maximum lifespan for an Endermite (2 minutes / 2400 ticks) before it despawns.
+const MAX_LIFETIME: i32 = 2400;
 
-#[entity_behavior(class = "Zombie")]
-/// Vanilla zombie entity with melee attack AI and daylight burning behavior.
-pub struct ZombieEntity {
+#[entity_behavior(class = "Endermite")]
+/// Vanilla Endermite entity that attacks players and despawns after 2 minutes.
+pub struct EndermiteEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    entity_data: SyncMutex<ZombieEntityData>,
+    entity_data: SyncMutex<EndermiteEntityData>,
+    life: SyncMutex<i32>,
+    player_spawned: SyncMutex<bool>,
+    health: SyncMutex<f32>,
+    mob_flags: SyncMutex<i8>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `ZombieEntity`.
-unsafe impl DowncastType for ZombieEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/zombie");
+// SAFETY: This key is owned by Steel and uniquely identifies `EndermiteEntity`.
+unsafe impl DowncastType for EndermiteEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/endermite");
 }
 
-impl ZombieEntity {
-    /// Creates a new zombie at runtime.
+impl EndermiteEntity {
+    /// Creates a new Endermite at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -53,7 +59,7 @@ impl ZombieEntity {
         )
     }
 
-    /// Reconstructs a zombie from persisted base entity state.
+    /// Reconstructs an Endermite from persisted base entity state.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
@@ -65,14 +71,16 @@ impl ZombieEntity {
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
+        let mut entity_data = EndermiteEntityData::new();
+        living_base.initialize_synced_data(&mut entity_data);
 
         {
             let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
+            goal_selector.add_goal(1, FloatGoal::new(&mob_base));
             goal_selector.add_goal(2, MeleeAttackGoal::new(1.0, false));
             goal_selector.add_goal(7, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(8, LookAtPlayerGoal::new(8.0));
-            goal_selector.add_goal(8, RandomLookAroundGoal::new());
+            goal_selector.add_goal(9, RandomLookAroundGoal::new());
 
             let mut target_selector = mob_base.target_selector().lock();
             target_selector.add_goal(1, HurtByTargetGoal::new());
@@ -87,66 +95,57 @@ impl ZombieEntity {
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32;
 
-        let mut entity_data = ZombieEntityData::new();
-        living_base.initialize_synced_data(&mut entity_data);
-        entity_data
-            .living_entity_mut()
-            .health
-            .set(max_health);
-
         Self {
             base,
             entity_type,
             living_base,
             mob_base,
             entity_data: SyncMutex::new(entity_data),
+            life: SyncMutex::new(0),
+            player_spawned: SyncMutex::new(false),
+            health: SyncMutex::new(max_health),
+            mob_flags: SyncMutex::new(0),
         }
     }
 
-    /// Returns whether this zombie is a baby.
+    /// Returns whether this Endermite was spawned by an Ender Pearl thrown by a player.
     #[must_use]
-    pub fn is_baby(&self) -> bool {
-        *self.entity_data.lock().baby.get()
+    pub fn is_player_spawned(&self) -> bool {
+        *self.player_spawned.lock()
     }
 
-    /// Sets whether this zombie is a baby.
-    pub fn set_baby(&self, baby: bool) {
-        self.entity_data.lock().baby.set(baby);
+    /// Sets whether this Endermite was spawned by an Ender Pearl thrown by a player.
+    pub fn set_player_spawned(&self, player_spawned: bool) {
+        *self.player_spawned.lock() = player_spawned;
     }
 
-    fn check_sun_burn(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
+    /// Returns the current lifetime ticks of this Endermite.
+    #[must_use]
+    pub fn life(&self) -> i32 {
+        *self.life.lock()
+    }
 
-        if !world.is_bright_outside() {
-            return;
+    /// Sets the lifetime ticks of this Endermite.
+    pub fn set_life(&self, life: i32) {
+        *self.life.lock() = life;
+    }
+
+    fn check_lifetime_despawn(&self) {
+        let mut life = self.life.lock();
+        *life += 1;
+        if *life >= MAX_LIFETIME {
+            self.set_removed(RemovalReason::Discarded);
         }
-
-        let pos = self.block_position();
-        if !world.can_see_sky(pos) {
-            return;
-        }
-
-        if self.is_on_fire() {
-            return;
-        }
-
-        self.set_remaining_fire_ticks(160);
     }
 }
 
-impl Entity for ZombieEntity {
+impl Entity for EndermiteEntity {
     fn base(&self) -> &EntityBase {
         &self.base
     }
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
     }
 
     fn base_tick(&self) {
@@ -165,39 +164,41 @@ impl Entity for ZombieEntity {
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
-        self.play_sound(&sound_events::ENTITY_ZOMBIE_STEP, 0.15, 1.0);
+        self.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_mob(nbt);
-        if self.is_baby() {
-            nbt.insert("IsBaby", 1_i8);
-        }
+        nbt.insert("Lifetime", *self.life.lock());
+        nbt.insert("PlayerSpawned", self.is_player_spawned());
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
-        self.set_baby(nbt.byte("IsBaby").is_some_and(|b| b != 0));
+        if let Some(life) = nbt.int("Lifetime") {
+            *self.life.lock() = life;
+        }
+        self.set_player_spawned(nbt.byte("PlayerSpawned").is_some_and(|b| b != 0));
     }
 }
 
-impl LivingEntity for ZombieEntity {
+impl LivingEntity for EndermiteEntity {
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
     }
 
     fn get_health(&self) -> f32 {
-        *self.entity_data.lock().living_entity().health.get()
+        *self.health.lock()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.entity_data
-            .lock()
-            .living_entity_mut()
-            .health
-            .set(clamped);
+        *self.health.lock() = clamped;
     }
 
     fn sound_volume(&self) -> f32 {
@@ -205,11 +206,11 @@ impl LivingEntity for ZombieEntity {
     }
 
     fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
-        Some(&sound_events::ENTITY_ZOMBIE_HURT)
+        Some(&sound_events::ENTITY_ENDERMITE_HURT)
     }
 
     fn death_sound(&self) -> Option<SoundEventRef> {
-        Some(&sound_events::ENTITY_ZOMBIE_DEATH)
+        Some(&sound_events::ENTITY_ENDERMITE_DEATH)
     }
 
     fn server_ai_step(&self) {
@@ -217,12 +218,12 @@ impl LivingEntity for ZombieEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        self.check_sun_burn();
+        self.check_lifetime_despawn();
         self.default_ai_step()
     }
 }
 
-impl Mob for ZombieEntity {
+impl Mob for EndermiteEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -236,48 +237,66 @@ impl Mob for ZombieEntity {
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
-        Some(&sound_events::ENTITY_ZOMBIE_AMBIENT)
+        Some(&sound_events::ENTITY_ENDERMITE_AMBIENT)
     }
 
     fn mob_flags(&self) -> i8 {
-        *self.entity_data.lock().mob().mob_flags.get()
+        *self.mob_flags.lock()
     }
 
     fn set_mob_flags(&self, flags: i8) {
-        self.entity_data.lock().mob_mut().mob_flags.set(flags);
+        *self.mob_flags.lock() = flags;
     }
 }
 
-impl PathfinderMob for ZombieEntity {}
+impl PathfinderMob for EndermiteEntity {}
 
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::entity_data::EntityData;
-    use steel_registry::vanilla_entities;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
-    use crate::entity::Entity;
+    use crate::behavior::init_behaviors;
+    use crate::entity::{Entity, LivingEntity};
+    use crate::world::World;
 
-    use super::ZombieEntity;
+    use super::EndermiteEntity;
 
     #[test]
-    fn zombie_on_fire_syncs_dirty_entity_data_with_on_fire_flag() {
-        let zombie = ZombieEntity::new(&vanilla_entities::ZOMBIE, 1, DVec3::ZERO, Weak::new());
-        assert!(!zombie.is_on_fire());
+    fn endermite_despawns_after_max_lifetime() {
+        init_vanilla_registry();
+        init_behaviors();
 
-        zombie.set_remaining_fire_ticks(160);
-        assert!(zombie.is_on_fire());
+        let endermite = EndermiteEntity::new(
+            &vanilla_entities::ENDERMITE,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
 
-        let dirty = zombie
-            .pack_dirty_entity_data()
-            .expect("expected dirty entity data when zombie set on fire");
-        let flags_entry = dirty.iter().find(|val| val.index == 0).expect("expected metadata index 0");
-        if let EntityData::Byte(b) = flags_entry.value {
-            assert_ne!(b & 1, 0, "expected ON_FIRE bit set in metadata index 0");
-        } else {
-            panic!("expected Byte metadata value for index 0");
-        }
+        endermite.set_life(2399);
+        assert!(!endermite.is_removed());
+
+        endermite.ai_step();
+        assert!(endermite.is_removed(), "Endermite should be discarded when lifetime reaches 2400");
+    }
+
+    #[test]
+    fn endermite_player_spawned_flag() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let endermite = EndermiteEntity::new(
+            &vanilla_entities::ENDERMITE,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
+
+        assert!(!endermite.is_player_spawned());
+        endermite.set_player_spawned(true);
+        assert!(endermite.is_player_spawned());
     }
 }

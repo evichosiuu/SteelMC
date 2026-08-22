@@ -22,17 +22,17 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::EnderPearlEntityData;
 use steel_registry::vanilla_game_rules::ENDER_PEARLS_VANISH_ON_DEATH;
-use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
-use steel_utils::ChunkPos;
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{ChunkPos, Downcast, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    change_entity_world,
+    ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySpawnReason, EntitySyncedData,
+    LivingEntity, Projectile, ProjectileBase, ProjectileHit, RemovalReason, SharedEntity,
+    ThrowableItemProjectile, ThrowableProjectile, change_entity_world, next_entity_id,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -170,7 +170,25 @@ impl EnderPearlEntity {
         player: &Player,
         teleport_pos: DVec3,
     ) {
-        // TODO: 5% endermite spawn (Endermite entity not implemented).
+        // Vanilla: 5% chance (1 in 20) to spawn an Endermite on player teleport
+        if rand::random_range(0..20) == 0 {
+            let world_weak = Arc::downgrade(world);
+            if let Some(endermite) = ENTITIES.create(
+                &vanilla_entities::ENDERMITE,
+                next_entity_id(),
+                teleport_pos,
+                world_weak,
+            ) {
+                if let Some(endermite_entity) = endermite.downcast_ref::<EndermiteEntity>() {
+                    endermite_entity.set_player_spawned(true);
+                }
+                if let Some(mob) = endermite.as_mob() {
+                    mob.finalize_spawn(world, EntitySpawnReason::Event, None);
+                }
+                let _ = world.try_add_entity(endermite);
+            }
+        }
+
         if self.is_on_portal_cooldown() {
             player.reset_portal_cooldown();
         }

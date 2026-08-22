@@ -1,4 +1,7 @@
+use steel_protocol::packets::game::SSetCommandMinecart;
+
 use super::{block_breaking::BlockBreakAction, *};
+use crate::entity::entities::CommandBlockMinecartEntity;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -297,6 +300,25 @@ impl Player {
         });
 
         self.send_packet(COpenSignEditor { pos, is_front_text });
+    }
+
+    /// Handles a set command minecart packet from the client.
+    pub fn handle_set_command_minecart(&self, packet: SSetCommandMinecart) {
+        if !self.has_infinite_materials() {
+            return;
+        }
+
+        let world = self.get_world();
+        let Some(entity) = world.get_entity_by_id(packet.entity_id) else {
+            return;
+        };
+
+        let Some(minecart) = entity.downcast_ref::<CommandBlockMinecartEntity>() else {
+            return;
+        };
+
+        minecart.set_command(packet.command);
+        minecart.set_track_output(packet.track_output);
     }
 }
 

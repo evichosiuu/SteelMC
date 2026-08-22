@@ -18,7 +18,8 @@ use steel_protocol::packets::game::{
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
     SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SSetCommandMinecart, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
+    SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -89,6 +90,7 @@ enum ScheduledPlayPacketKind {
     ContainerClose(SContainerClose),
     ContainerSlotStateChanged(SContainerSlotStateChanged),
     SetCreativeModeSlot(SSetCreativeModeSlot),
+    SetCommandMinecart(SSetCommandMinecart),
     PlayerInput(SPlayerInput),
     PlayerCommand(SPlayerCommand),
     PlayerAbilities(SPlayerAbilities),
@@ -200,6 +202,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
             | ScheduledPlayPacketKind::RenameItem(_)
+            | ScheduledPlayPacketKind::SetCommandMinecart(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
             | ScheduledPlayPacketKind::SignUpdate(_)
@@ -296,6 +299,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::SetCreativeModeSlot(packet) => {
                 player.handle_set_creative_mode_slot(packet);
+            }
+            ScheduledPlayPacketKind::SetCommandMinecart(packet) => {
+                player.handle_set_command_minecart(packet);
             }
             ScheduledPlayPacketKind::PlayerInput(packet) => player.handle_player_input(packet),
             ScheduledPlayPacketKind::PlayerCommand(packet) => {
@@ -723,6 +729,11 @@ impl JavaConnection {
             play::S_SET_CREATIVE_MODE_SLOT => {
                 scheduled(ScheduledPlayPacketKind::SetCreativeModeSlot(
                     SSetCreativeModeSlot::read_packet(data)?,
+                ))
+            }
+            play::S_SET_COMMAND_MINECART => {
+                scheduled(ScheduledPlayPacketKind::SetCommandMinecart(
+                    SSetCommandMinecart::read_packet(data)?,
                 ))
             }
             play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
