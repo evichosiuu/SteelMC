@@ -387,3 +387,34 @@ fn enchantment_argument_resolves_and_suggests_registered_entries() {
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["minecraft:sharpness"]);
 }
+
+#[test]
+fn mob_effect_argument_resolves_and_suggests_registered_entries() {
+    init_vanilla_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::mob_effect());
+
+    for input in ["resource speed", "resource minecraft:speed"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered mob effect should parse");
+        };
+        assert_eq!(
+            chain.top_context().mob_effect("value"),
+            Ok(vanilla_mob_effects::SPEED)
+        );
+    }
+
+    let parse = dispatcher.parse("resource minecraft:missing", TestSource::new());
+    assert!(dispatcher.context_chain(parse).is_err());
+
+    let parse = dispatcher.parse("resource minecraft:spee", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("mob effect suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["minecraft:speed"]);
+}
