@@ -152,9 +152,7 @@ impl EntityRegistry {
         self.entries[id].load_factory = Some(factory);
     }
 
-    /// Creates a new entity instance.
-    ///
-    /// Returns `None` if no factory is registered for the given type.
+    /// Creates a new entity instance, falling back to a `RawEntity` if no typed factory is registered.
     #[must_use]
     pub fn create(
         &self,
@@ -164,10 +162,11 @@ impl EntityRegistry {
         world: Weak<World>,
     ) -> Option<SharedEntity> {
         let id = entity_type.id();
-        self.entries
-            .get(id)?
-            .factory
-            .map(|f| f(entity_type, entity_id, pos, world))
+        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
+            return Some(factory(entity_type, entity_id, pos, world));
+        }
+
+        Some(Arc::new(RawEntity::new(entity_id, pos, world, entity_type)))
     }
 
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
@@ -360,5 +359,17 @@ mod tests {
         };
 
         assert_eq!(entity.entity_type(), &vanilla_entities::OAK_BOAT);
+    }
+
+    #[test]
+    fn create_falls_back_to_raw_entity_for_unregistered_types() {
+        init_vanilla_registry();
+        let registry = EntityRegistry::new();
+
+        let Some(entity) = registry.create(&vanilla_entities::CREEPER, 10, DVec3::ZERO, Weak::new()) else {
+            panic!("unregistered entity creation should fall back to RawEntity");
+        };
+
+        assert_eq!(entity.entity_type(), &vanilla_entities::CREEPER);
     }
 }
