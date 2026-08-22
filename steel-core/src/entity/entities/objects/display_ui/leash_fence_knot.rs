@@ -9,12 +9,13 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_entity_data::LeashKnotEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
-    next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
+    SharedEntity, next_entity_id,
 };
 use crate::world::World;
 
@@ -25,6 +26,7 @@ pub struct LeashFenceKnotEntity {
     entity_type: EntityTypeRef,
     block_pos: SyncMutex<BlockPos>,
     check_interval: SyncMutex<i32>,
+    entity_data: SyncMutex<LeashKnotEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `LeashFenceKnotEntity`.
@@ -69,6 +71,7 @@ impl LeashFenceKnotEntity {
             entity_type,
             block_pos: SyncMutex::new(block_pos),
             check_interval: SyncMutex::new(0),
+            entity_data: SyncMutex::new(LeashKnotEntityData::new()),
         }
     }
 
@@ -86,6 +89,7 @@ impl LeashFenceKnotEntity {
             entity_type,
             block_pos: SyncMutex::new(block_pos),
             check_interval: SyncMutex::new(0),
+            entity_data: SyncMutex::new(LeashKnotEntityData::new()),
         }
     }
 
@@ -194,6 +198,10 @@ impl Entity for LeashFenceKnotEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn spawn_position(&self) -> DVec3 {

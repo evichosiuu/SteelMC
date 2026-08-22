@@ -88,6 +88,7 @@ use crate::{
     block_entity::{BlockEntity, SharedBlockEntity, entities::EndGatewayBlockEntity},
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
+    entity::damage::DamageSource,
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
@@ -111,6 +112,7 @@ mod broadcasts;
 pub mod dragon_fight;
 pub(crate) mod clock;
 mod entity_management;
+pub mod explosion;
 mod environment;
 mod events;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
@@ -647,6 +649,28 @@ impl World {
     /// Returns the number of chunks saved.
     pub async fn save_all_chunks(&self) -> io::Result<usize> {
         self.chunk_map.save_all_chunks().await
+    }
+
+    /// Triggers an explosion in the world.
+    pub fn explode(
+        self: &Arc<Self>,
+        source: Option<SharedEntity>,
+        damage_source: Option<DamageSource>,
+        center: DVec3,
+        radius: f32,
+        create_fire: bool,
+        block_interaction: explosion::ExplosionBlockInteraction,
+    ) {
+        let mut builder = explosion::Explosion::new(self, center, radius)
+            .with_fire(create_fire)
+            .with_block_interaction(block_interaction);
+        if let Some(src) = source {
+            builder = builder.with_source(src);
+        }
+        if let Some(dmg) = damage_source {
+            builder = builder.with_damage_source(dmg);
+        }
+        builder.explode();
     }
 }
 

@@ -1,5 +1,6 @@
 //! Vanilla Skeleton entity with AI goals and behavior.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -8,9 +9,12 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_entity_data::SkeletonEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -19,9 +23,10 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob,
+    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
+    MobBase, PathfinderMob,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::world::World;
 
@@ -34,8 +39,7 @@ pub struct SkeletonEntity {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    health: SyncMutex<f32>,
-    mob_flags: SyncMutex<i8>,
+    entity_data: SyncMutex<SkeletonEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `SkeletonEntity`.
@@ -88,13 +92,19 @@ impl SkeletonEntity {
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32;
 
+        let mut entity_data = SkeletonEntityData::new();
+        living_base.initialize_synced_data(&mut entity_data);
+        entity_data
+            .living_entity_mut()
+            .health
+            .set(max_health);
+
         Self {
             base,
             entity_type,
             living_base,
             mob_base,
-            health: SyncMutex::new(max_health),
-            mob_flags: SyncMutex::new(0),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 
@@ -127,6 +137,10 @@ impl Entity for SkeletonEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn base_tick(&self) {
@@ -163,13 +177,17 @@ impl LivingEntity for SkeletonEntity {
     }
 
     fn get_health(&self) -> f32 {
-        *self.health.lock()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        *self.health.lock() = clamped;
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
 
     fn sound_volume(&self) -> f32 {
@@ -199,6 +217,46 @@ impl Mob for SkeletonEntity {
         &self.mob_base
     }
 
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        spawn_reason: EntitySpawnReason,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        let result = self.finalize_spawn_mob_base(world, spawn_reason, group_data);
+
+        let mut bow = ItemStack::new(&vanilla_items::BOW);
+        let difficulty = world.difficulty();
+
+        // Vanilla equips weapon and rolls for enchanted weapon based on difficulty.
+        let enchant_chance = match difficulty {
+            Difficulty::Peaceful => 0.0,
+            Difficulty::Easy => 0.05,
+            Difficulty::Normal => 0.15,
+            Difficulty::Hard => 0.25,
+        };
+
+        if enchant_chance > 0.0 && rand::random::<f32>() < enchant_chance {
+            let possible_enchantments = [
+                (&vanilla_enchantments::POWER.key, 1..=3),
+                (&vanilla_enchantments::PUNCH.key, 1..=2),
+                (&vanilla_enchantments::FLAME.key, 1..=1),
+                (&vanilla_enchantments::UNBREAKING.key, 1..=3),
+            ];
+            let idx = rand::random_range(0..possible_enchantments.len());
+            let (enchantment_key, ref level_range) = possible_enchantments[idx];
+            let level = rand::random_range(level_range.clone());
+            bow.upgrade_enchantment(enchantment_key.clone(), level);
+        }
+
+        self.living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, bow);
+
+        result
+    }
+
     fn tick_goal_selectors(&self) {
         PathfinderMob::tick_pathfinder_goal_selectors(self);
     }
@@ -212,12 +270,44 @@ impl Mob for SkeletonEntity {
     }
 
     fn mob_flags(&self) -> i8 {
-        *self.mob_flags.lock()
+        *self.entity_data.lock().mob().mob_flags.get()
     }
 
     fn set_mob_flags(&self, flags: i8) {
-        *self.mob_flags.lock() = flags;
+        self.entity_data.lock().mob_mut().mob_flags.set(flags);
     }
 }
 
 impl PathfinderMob for SkeletonEntity {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_data::EntityData;
+    use steel_registry::vanilla_entities;
+
+    use crate::entity::Entity;
+
+    use super::SkeletonEntity;
+
+    #[test]
+    fn skeleton_on_fire_syncs_dirty_entity_data_with_on_fire_flag() {
+        let skeleton = SkeletonEntity::new(&vanilla_entities::SKELETON, 1, DVec3::ZERO, Weak::new());
+        assert!(!skeleton.is_on_fire());
+
+        skeleton.set_remaining_fire_ticks(160);
+        assert!(skeleton.is_on_fire());
+
+        let dirty = skeleton
+            .pack_dirty_entity_data()
+            .expect("expected dirty entity data when skeleton set on fire");
+        let flags_entry = dirty.iter().find(|val| val.index == 0).expect("expected metadata index 0");
+        if let EntityData::Byte(b) = flags_entry.value {
+            assert_ne!(b & 1, 0, "expected ON_FIRE bit set in metadata index 0");
+        } else {
+            panic!("expected Byte metadata value for index 0");
+        }
+    }
+}

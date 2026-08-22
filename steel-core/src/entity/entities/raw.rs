@@ -6,10 +6,11 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_entity_data::BaseEntityData;
 use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, locks::SyncMutex};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 
 /// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
@@ -20,6 +21,7 @@ pub struct RawEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     data: SyncMutex<NbtCompound>,
+    entity_data: SyncMutex<BaseEntityData>,
 }
 
 // SAFETY: This key identifies the Steel fallback implementation, independently
@@ -36,6 +38,7 @@ impl RawEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             data: SyncMutex::new(NbtCompound::new()),
+            entity_data: SyncMutex::new(BaseEntityData::new()),
         }
     }
 
@@ -46,6 +49,7 @@ impl RawEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             data: SyncMutex::new(NbtCompound::new()),
+            entity_data: SyncMutex::new(BaseEntityData::new()),
         }
     }
 
@@ -79,6 +83,10 @@ impl Entity for RawEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn tick(&self) {
@@ -120,6 +128,7 @@ mod tests {
 
     use glam::DVec3;
     use simdnbt::owned::NbtTag;
+    use steel_registry::entity_data::EntityData;
     use steel_registry::vanilla_entities;
     use steel_utils::UuidExt;
     use uuid::Uuid;
@@ -138,5 +147,24 @@ mod tests {
             .insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
 
         assert_eq!(entity.projectile_owner_uuid(), Some(owner));
+    }
+
+    #[test]
+    fn raw_entity_on_fire_syncs_dirty_entity_data_with_on_fire_flag() {
+        let entity = RawEntity::new(1, DVec3::ZERO, Weak::new(), &vanilla_entities::CREEPER);
+        assert!(!entity.is_on_fire());
+
+        entity.set_remaining_fire_ticks(160);
+        assert!(entity.is_on_fire());
+
+        let dirty = entity
+            .pack_dirty_entity_data()
+            .expect("expected dirty entity data when set on fire");
+        let flags_entry = dirty.iter().find(|val| val.index == 0).expect("expected metadata index 0");
+        if let EntityData::Byte(b) = flags_entry.value {
+            assert_ne!(b & 1, 0, "expected ON_FIRE bit set in metadata index 0");
+        } else {
+            panic!("expected Byte metadata value for index 0");
+        }
     }
 }

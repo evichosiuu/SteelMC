@@ -21,7 +21,7 @@ pub use building::{
     HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
     LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock, PowderSnowBlock,
     RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock, SpongeBlock,
-    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
+    StairBlock, TntBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
     WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
