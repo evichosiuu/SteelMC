@@ -9,6 +9,7 @@ use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_entity_data::ZombieEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
@@ -19,8 +20,8 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob,
+    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
+    MobBase, PathfinderMob,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -34,9 +35,7 @@ pub struct ZombieEntity {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    baby: SyncMutex<bool>,
-    health: SyncMutex<f32>,
-    mob_flags: SyncMutex<i8>,
+    entity_data: SyncMutex<ZombieEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ZombieEntity`.
@@ -88,26 +87,31 @@ impl ZombieEntity {
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32;
 
+        let mut entity_data = ZombieEntityData::new();
+        living_base.initialize_synced_data(&mut entity_data);
+        entity_data
+            .living_entity_mut()
+            .health
+            .set(max_health);
+
         Self {
             base,
             entity_type,
             living_base,
             mob_base,
-            baby: SyncMutex::new(false),
-            health: SyncMutex::new(max_health),
-            mob_flags: SyncMutex::new(0),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 
     /// Returns whether this zombie is a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
-        *self.baby.lock()
+        *self.entity_data.lock().baby.get()
     }
 
     /// Sets whether this zombie is a baby.
     pub fn set_baby(&self, baby: bool) {
-        *self.baby.lock() = baby;
+        self.entity_data.lock().baby.set(baby);
     }
 
     fn check_sun_burn(&self) {
@@ -139,6 +143,10 @@ impl Entity for ZombieEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn base_tick(&self) {
@@ -179,13 +187,17 @@ impl LivingEntity for ZombieEntity {
     }
 
     fn get_health(&self) -> f32 {
-        *self.health.lock()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        *self.health.lock() = clamped;
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
 
     fn sound_volume(&self) -> f32 {
@@ -228,12 +240,44 @@ impl Mob for ZombieEntity {
     }
 
     fn mob_flags(&self) -> i8 {
-        *self.mob_flags.lock()
+        *self.entity_data.lock().mob().mob_flags.get()
     }
 
     fn set_mob_flags(&self, flags: i8) {
-        *self.mob_flags.lock() = flags;
+        self.entity_data.lock().mob_mut().mob_flags.set(flags);
     }
 }
 
 impl PathfinderMob for ZombieEntity {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_data::EntityData;
+    use steel_registry::vanilla_entities;
+
+    use crate::entity::Entity;
+
+    use super::ZombieEntity;
+
+    #[test]
+    fn zombie_on_fire_syncs_dirty_entity_data_with_on_fire_flag() {
+        let zombie = ZombieEntity::new(&vanilla_entities::ZOMBIE, 1, DVec3::ZERO, Weak::new());
+        assert!(!zombie.is_on_fire());
+
+        zombie.set_remaining_fire_ticks(160);
+        assert!(zombie.is_on_fire());
+
+        let dirty = zombie
+            .pack_dirty_entity_data()
+            .expect("expected dirty entity data when zombie set on fire");
+        let flags_entry = dirty.iter().find(|val| val.index == 0).expect("expected metadata index 0");
+        if let EntityData::Byte(b) = flags_entry.value {
+            assert_ne!(b & 1, 0, "expected ON_FIRE bit set in metadata index 0");
+        } else {
+            panic!("expected Byte metadata value for index 0");
+        }
+    }
+}

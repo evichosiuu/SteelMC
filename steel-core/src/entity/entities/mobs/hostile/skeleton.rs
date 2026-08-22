@@ -11,6 +11,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_entity_data::SkeletonEntityData;
 use steel_registry::{sound_events, vanilla_attributes, vanilla_enchantments, vanilla_items};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::Difficulty;
@@ -22,8 +23,8 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySpawnReason, LivingEntity, LivingEntityBase, Mob,
-    MobBase, PathfinderMob, SpawnGroupData,
+    Entity, EntityBase, EntityBaseLoad, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, SpawnGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -38,8 +39,7 @@ pub struct SkeletonEntity {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    health: SyncMutex<f32>,
-    mob_flags: SyncMutex<i8>,
+    entity_data: SyncMutex<SkeletonEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `SkeletonEntity`.
@@ -92,13 +92,19 @@ impl SkeletonEntity {
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32;
 
+        let mut entity_data = SkeletonEntityData::new();
+        living_base.initialize_synced_data(&mut entity_data);
+        entity_data
+            .living_entity_mut()
+            .health
+            .set(max_health);
+
         Self {
             base,
             entity_type,
             living_base,
             mob_base,
-            health: SyncMutex::new(max_health),
-            mob_flags: SyncMutex::new(0),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 
@@ -131,6 +137,10 @@ impl Entity for SkeletonEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn base_tick(&self) {
@@ -167,13 +177,17 @@ impl LivingEntity for SkeletonEntity {
     }
 
     fn get_health(&self) -> f32 {
-        *self.health.lock()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        *self.health.lock() = clamped;
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
 
     fn sound_volume(&self) -> f32 {
@@ -256,12 +270,44 @@ impl Mob for SkeletonEntity {
     }
 
     fn mob_flags(&self) -> i8 {
-        *self.mob_flags.lock()
+        *self.entity_data.lock().mob().mob_flags.get()
     }
 
     fn set_mob_flags(&self, flags: i8) {
-        *self.mob_flags.lock() = flags;
+        self.entity_data.lock().mob_mut().mob_flags.set(flags);
     }
 }
 
 impl PathfinderMob for SkeletonEntity {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_data::EntityData;
+    use steel_registry::vanilla_entities;
+
+    use crate::entity::Entity;
+
+    use super::SkeletonEntity;
+
+    #[test]
+    fn skeleton_on_fire_syncs_dirty_entity_data_with_on_fire_flag() {
+        let skeleton = SkeletonEntity::new(&vanilla_entities::SKELETON, 1, DVec3::ZERO, Weak::new());
+        assert!(!skeleton.is_on_fire());
+
+        skeleton.set_remaining_fire_ticks(160);
+        assert!(skeleton.is_on_fire());
+
+        let dirty = skeleton
+            .pack_dirty_entity_data()
+            .expect("expected dirty entity data when skeleton set on fire");
+        let flags_entry = dirty.iter().find(|val| val.index == 0).expect("expected metadata index 0");
+        if let EntityData::Byte(b) = flags_entry.value {
+            assert_ne!(b & 1, 0, "expected ON_FIRE bit set in metadata index 0");
+        } else {
+            panic!("expected Byte metadata value for index 0");
+        }
+    }
+}
