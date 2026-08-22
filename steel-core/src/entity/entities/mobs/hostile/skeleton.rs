@@ -1,5 +1,6 @@
 //! Vanilla Skeleton entity with AI goals and behavior.
 
+use std::sync::Arc;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -8,9 +9,11 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::{sound_events, vanilla_attributes};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_enchantments, vanilla_items};
 use steel_utils::locks::SyncMutex;
+use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -19,9 +22,10 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob,
+    Entity, EntityBase, EntityBaseLoad, EntitySpawnReason, LivingEntity, LivingEntityBase, Mob,
+    MobBase, PathfinderMob, SpawnGroupData,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::world::World;
 
@@ -197,6 +201,46 @@ impl LivingEntity for SkeletonEntity {
 impl Mob for SkeletonEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
+    }
+
+    fn finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        spawn_reason: EntitySpawnReason,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        let result = self.finalize_spawn_mob_base(world, spawn_reason, group_data);
+
+        let mut bow = ItemStack::new(&vanilla_items::BOW);
+        let difficulty = world.difficulty();
+
+        // Vanilla equips weapon and rolls for enchanted weapon based on difficulty.
+        let enchant_chance = match difficulty {
+            Difficulty::Peaceful => 0.0,
+            Difficulty::Easy => 0.05,
+            Difficulty::Normal => 0.15,
+            Difficulty::Hard => 0.25,
+        };
+
+        if enchant_chance > 0.0 && rand::random::<f32>() < enchant_chance {
+            let possible_enchantments = [
+                (&vanilla_enchantments::POWER.key, 1..=3),
+                (&vanilla_enchantments::PUNCH.key, 1..=2),
+                (&vanilla_enchantments::FLAME.key, 1..=1),
+                (&vanilla_enchantments::UNBREAKING.key, 1..=3),
+            ];
+            let idx = rand::random_range(0..possible_enchantments.len());
+            let (enchantment_key, ref level_range) = possible_enchantments[idx];
+            let level = rand::random_range(level_range.clone());
+            bow.upgrade_enchantment(enchantment_key.clone(), level);
+        }
+
+        self.living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, bow);
+
+        result
     }
 
     fn tick_goal_selectors(&self) {
