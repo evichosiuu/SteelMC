@@ -109,6 +109,7 @@ mod block_region;
 mod block_updates;
 mod border;
 mod broadcasts;
+pub mod dragon_fight;
 pub(crate) mod clock;
 mod entity_management;
 pub mod explosion;
@@ -300,6 +301,8 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Active Ender Dragon Fight manager if this dimension has an end fight.
+    pub dragon_fight: SyncMutex<Option<Arc<dragon_fight::EnderDragonFight>>>,
 }
 
 impl World {
@@ -443,6 +446,11 @@ impl World {
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                dragon_fight: SyncMutex::new(if dimension_type == &vanilla_dimension_types::THE_END || dimension_type.has_ender_dragon_fight {
+                    Some(Arc::new(dragon_fight::EnderDragonFight::new(weak_self.clone())))
+                } else {
+                    None
+                }),
             }
         }))
     }
