@@ -5,10 +5,7 @@ pub mod objects;
 mod raw;
 
 pub use mobs::bosses::{DragonPhase, EnderDragonEntity};
-pub use mobs::hostile::{SkeletonEntity, ZombieEntity};
-pub use mobs::hostile::{CreeperEntity, SkeletonEntity, ZombieEntity};
-pub use mobs::passive::{CowEntity, PigEntity, SheepEntity};
-pub use mobs::hostile::{EndermiteEntity, SkeletonEntity, ZombieEntity};
+pub use mobs::hostile::{CreeperEntity, EndermiteEntity, SkeletonEntity, ZombieEntity};
 pub use mobs::neutral::EnderManEntity;
 pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
@@ -16,9 +13,8 @@ pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::AreaEffectCloudEntity;
 pub use objects::projectiles::{
-    EggEntity, EnderPearlEntity, FireworkRocketEntity, SnowballEntity,
-    ThrownLingeringPotionEntity, ThrownSplashPotionEntity,
     DragonFireballEntity, EggEntity, EnderPearlEntity, FireworkRocketEntity, SnowballEntity,
+    ThrownLingeringPotionEntity, ThrownSplashPotionEntity,
 };
 pub use objects::vehicles::{
     ChestMinecartEntity, CommandBlockMinecartEntity, FurnaceMinecartEntity, HopperMinecartEntity,
