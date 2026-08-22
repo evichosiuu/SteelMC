@@ -4,6 +4,7 @@ mod avoid_entity;
 mod breath_air;
 mod breed_goal;
 mod climb_on_top_of_powder_snow;
+mod creeper_swell;
 mod door_interact;
 mod eat_block_goal;
 mod flee_sun;
@@ -32,7 +33,9 @@ mod tempt_goal;
 mod try_find_water;
 mod water_avoiding_random_stroll;
 
+pub(crate) use avoid_entity::AvoidEntityGoal;
 pub(crate) use breed_goal::BreedGoal;
+pub(crate) use creeper_swell::CreeperSwellGoal;
 pub(crate) use eat_block_goal::EatBlockGoal;
 pub(crate) use flee_sun::FleeSunGoal;
 pub(crate) use float_goal::FloatGoal;
