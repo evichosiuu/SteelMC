@@ -72,6 +72,9 @@ impl World {
         if !self.contains_player(player) {
             return None;
         }
+        if let Some(fight) = self.ender_dragon_fight() {
+            fight.remove_player(player);
+        }
         self.chunk_map.remove_player(player);
         self.players.remove_player_sync(player)
     }
@@ -153,6 +156,11 @@ impl World {
 
         self.register_respawned_player_entity(&player);
         self.update_sleeping_player_list();
+
+        if let Some(fight) = self.ender_dragon_fight() {
+            fight.add_player(&player);
+        }
+
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
@@ -249,11 +257,32 @@ impl World {
         self.chunk_map.update_player_status(&player);
         self.update_sleeping_player_list();
 
+        if let Some(fight) = self.ender_dragon_fight() {
+            fight.add_player(&player);
+        }
+
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
         });
 
         true
+    }
+
+    /// Returns the active Ender Dragon Fight manager for this world, if present.
+    #[must_use]
+    pub fn ender_dragon_fight(&self) -> Option<Arc<crate::world::dragon_fight::EnderDragonFight>> {
+        self.dragon_fight.lock().clone()
+    }
+
+    /// Called when an End Crystal in this world is destroyed.
+    pub fn on_end_crystal_destroyed(
+        &self,
+        crystal: &crate::entity::entities::EndCrystalEntity,
+        source: &crate::entity::damage::DamageSource,
+    ) {
+        if let Some(fight) = self.ender_dragon_fight() {
+            fight.on_crystal_destroyed(crystal, source);
+        }
     }
 }

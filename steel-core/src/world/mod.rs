@@ -88,6 +88,7 @@ use crate::{
     block_entity::{BlockEntity, SharedBlockEntity, entities::EndGatewayBlockEntity},
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
+    entity::damage::DamageSource,
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
@@ -108,8 +109,10 @@ mod block_region;
 mod block_updates;
 mod border;
 mod broadcasts;
+pub mod dragon_fight;
 pub(crate) mod clock;
 mod entity_management;
+pub mod explosion;
 mod environment;
 mod events;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
@@ -298,6 +301,8 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Active Ender Dragon Fight manager if this dimension has an end fight.
+    pub dragon_fight: SyncMutex<Option<Arc<dragon_fight::EnderDragonFight>>>,
 }
 
 impl World {
@@ -441,6 +446,11 @@ impl World {
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                dragon_fight: SyncMutex::new(if dimension_type == &vanilla_dimension_types::THE_END || dimension_type.has_ender_dragon_fight {
+                    Some(Arc::new(dragon_fight::EnderDragonFight::new(weak_self.clone())))
+                } else {
+                    None
+                }),
             }
         }))
     }
@@ -639,6 +649,28 @@ impl World {
     /// Returns the number of chunks saved.
     pub async fn save_all_chunks(&self) -> io::Result<usize> {
         self.chunk_map.save_all_chunks().await
+    }
+
+    /// Triggers an explosion in the world.
+    pub fn explode(
+        self: &Arc<Self>,
+        source: Option<SharedEntity>,
+        damage_source: Option<DamageSource>,
+        center: DVec3,
+        radius: f32,
+        create_fire: bool,
+        block_interaction: explosion::ExplosionBlockInteraction,
+    ) {
+        let mut builder = explosion::Explosion::new(self, center, radius)
+            .with_fire(create_fire)
+            .with_block_interaction(block_interaction);
+        if let Some(src) = source {
+            builder = builder.with_source(src);
+        }
+        if let Some(dmg) = damage_source {
+            builder = builder.with_damage_source(dmg);
+        }
+        builder.explode();
     }
 }
 
