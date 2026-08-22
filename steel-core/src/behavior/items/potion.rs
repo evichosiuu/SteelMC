@@ -1,6 +1,10 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
-use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::behavior::potion_utils::apply_potion_effects;
+use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext, UseOnContext};
+use crate::entity::LivingEntity;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use glam::DVec3;
 use steel_macros::item_behavior;
@@ -20,17 +24,58 @@ use text_components::TextComponent;
 
 use super::dynamic_name::potion_name;
 
+#[cfg(test)]
+#[path = "potion_tests.rs"]
+mod potion_tests;
+
 /// Potion behavior providing Vanilla's potion-content-dependent name.
 // TODO: Add PotionItem's water default instance when Steel has item-specific
 // default-stack factories.
-// TODO: Complete the shared CONSUMABLE use/finish lifecycle so potions can be
-// drunk.
 #[item_behavior]
 pub struct PotionItem;
 
 impl ItemBehavior for PotionItem {
     fn get_name<'a>(&self, stack: &'a ItemStack) -> Cow<'a, TextComponent> {
         potion_name(stack)
+    }
+
+    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        context.player.start_using_item(context.hand);
+        InteractionResult::Consume
+    }
+
+    fn finish_using(
+        &self,
+        stack: &mut ItemStack,
+        world: &Arc<World>,
+        user: &dyn LivingEntity,
+    ) -> ItemStack {
+        if let Some(player) = user.as_player() {
+            if !player.has_infinite_materials() {
+                stack.shrink(1);
+            }
+
+            apply_potion_effects(world, user, stack, 1.0, None);
+
+            let empty_bottle = ItemStack::new(&vanilla_items::GLASS_BOTTLE);
+            if !player.has_infinite_materials() {
+                if stack.is_empty() {
+                    return empty_bottle;
+                }
+                player.add_item_or_drop(empty_bottle);
+            }
+        } else {
+            apply_potion_effects(world, user, stack, 1.0, None);
+            if !user.has_infinite_materials() {
+                stack.shrink(1);
+            }
+        }
+
+        if stack.is_empty() {
+            ItemStack::new(&vanilla_items::GLASS_BOTTLE)
+        } else {
+            stack.copy_with_count(stack.count())
+        }
     }
 
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {

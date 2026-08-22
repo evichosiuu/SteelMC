@@ -31,6 +31,7 @@ pub mod fluid;
 mod item;
 pub(crate) mod item_utils;
 pub mod items;
+pub mod potion_utils;
 
 #[expect(warnings)]
 #[rustfmt::skip]
