@@ -1231,6 +1231,11 @@ pub trait LivingEntity: Entity {
         }
     }
 
+    /// Removes all active vanilla mob effects.
+    fn clear_mob_effects(&self) -> bool {
+        self.living_base().clear_mob_effects()
+    }
+
     /// Removes active vanilla mob-effect state.
     fn remove_mob_effect(&self, effect: MobEffectRef) -> bool {
         self.living_base().remove_mob_effect(effect)

@@ -15,7 +15,7 @@ use crate::command::brigadier::{
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
-    timeline::TimelineRef, world_clock::WorldClockRef,
+    mob_effect::MobEffectRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
 use text_components::TextComponent;
@@ -27,8 +27,8 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        GameModeValue, IdentifierValue, ItemStackValue, MobEffectValue, NbtPathValue,
+        ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
     },
     selector::EntitySelector,
 };
@@ -308,6 +308,11 @@ where
 
     pub(crate) fn entity_type(&self, name: &str) -> Result<EntityTypeRef, CommandSyntaxError> {
         self.typed_argument::<EntityTypeValue>(name)
+            .map(|value| value.0)
+    }
+
+    pub(crate) fn mob_effect(&self, name: &str) -> Result<MobEffectRef, CommandSyntaxError> {
+        self.typed_argument::<MobEffectValue>(name)
             .map(|value| value.0)
     }
 

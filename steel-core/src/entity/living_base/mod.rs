@@ -36,7 +36,8 @@ use crate::world::World;
 pub const DEATH_DURATION: i32 = 20;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
-const INFINITE_EFFECT_DURATION: i32 = -1;
+/// Vanilla `MobEffectInstance` duration value representing infinite duration (-1).
+pub const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
@@ -1107,6 +1108,18 @@ impl LivingEntityBase {
         } else {
             self.remove_mob_effect(effect);
         }
+    }
+
+    /// Removes all active vanilla mob effects.
+    pub fn clear_mob_effects(&self) -> bool {
+        let keys: Vec<MobEffectRef> = self.active_mob_effects.lock().keys().copied().collect();
+        let mut removed = false;
+        for key in keys {
+            if self.remove_mob_effect(key) {
+                removed = true;
+            }
+        }
+        removed
     }
 
     /// Removes active vanilla mob-effect state.
