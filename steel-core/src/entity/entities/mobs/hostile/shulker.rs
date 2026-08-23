@@ -26,6 +26,7 @@ use crate::physics::MoveResult;
 use crate::world::World;
 
 #[entity_behavior(class = "Shulker")]
+/// Vanilla Shulker entity.
 pub struct ShulkerEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -39,6 +40,7 @@ unsafe impl DowncastType for ShulkerEntity {
 }
 
 impl ShulkerEntity {
+    /// Creates a new entity instance at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -47,6 +49,7 @@ impl ShulkerEntity {
         )
     }
 
+    /// Reconstructs an entity instance from saved NBT data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(

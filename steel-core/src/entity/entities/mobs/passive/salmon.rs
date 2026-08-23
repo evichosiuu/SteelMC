@@ -25,6 +25,7 @@ use crate::physics::MoveResult;
 use crate::world::World;
 
 #[entity_behavior(class = "Salmon")]
+/// Vanilla Salmon entity.
 pub struct SalmonEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -38,6 +39,7 @@ unsafe impl DowncastType for SalmonEntity {
 }
 
 impl SalmonEntity {
+    /// Creates a new entity instance at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -46,6 +48,7 @@ impl SalmonEntity {
         )
     }
 
+    /// Reconstructs an entity instance from saved NBT data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(

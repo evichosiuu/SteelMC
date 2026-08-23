@@ -44,6 +44,7 @@ unsafe impl DowncastType for ArmadilloEntity {
 }
 
 impl ArmadilloEntity {
+    /// Creates a new entity instance at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -52,6 +53,7 @@ impl ArmadilloEntity {
         )
     }
 
+    /// Reconstructs an entity instance from saved NBT data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(

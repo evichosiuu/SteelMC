@@ -41,6 +41,7 @@ unsafe impl DowncastType for LlamaEntity {
 }
 
 impl LlamaEntity {
+    /// Creates a new entity instance at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -49,6 +50,7 @@ impl LlamaEntity {
         )
     }
 
+    /// Reconstructs an entity instance from saved NBT data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
@@ -167,6 +169,7 @@ unsafe impl DowncastType for TraderLlamaEntity {
 }
 
 impl TraderLlamaEntity {
+    /// Creates a new entity instance at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -175,6 +178,7 @@ impl TraderLlamaEntity {
         )
     }
 
+    /// Reconstructs an entity instance from saved NBT data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
