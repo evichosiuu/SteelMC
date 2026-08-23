@@ -1,5 +1,6 @@
 //! Vehicle entity implementations.
 
+mod abstract_minecart;
 mod chest_minecart;
 mod command_block_minecart;
 mod furnace_minecart;
@@ -8,6 +9,7 @@ mod minecart;
 mod spawner_minecart;
 mod tnt_minecart;
 
+pub use abstract_minecart::AbstractMinecart;
 pub use chest_minecart::ChestMinecartEntity;
 pub use command_block_minecart::CommandBlockMinecartEntity;
 pub use furnace_minecart::FurnaceMinecartEntity;

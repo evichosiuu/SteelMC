@@ -17,9 +17,11 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, translations};
 use text_components::TextComponent;
 
-use crate::behavior::InteractionResult;
+use super::abstract_minecart::AbstractMinecart;
+use steel_registry::vanilla_items;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    DamageSource, Entity, EntityBase, EntityBaseLoad,
+    reset_forward_direction_of_relative_portal_position,
 };
 use crate::inventory::container::{Container, SimpleContainer};
 use crate::inventory::lock::ContainerRef;
@@ -131,21 +133,16 @@ impl Entity for HopperMinecartEntity {
         10
     }
 
-    fn interact_entity(
-        &self,
-        player: &Player,
-        _hand: InteractionHand,
-        _location: DVec3,
-    ) -> InteractionResult {
-        let inventory = player.inventory.clone();
-        let container_ref = ContainerRef::from(self.container.clone());
+    fn is_on_rails(&self) -> bool {
+        AbstractMinecart::is_on_rails(self)
+    }
 
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_HOPPER.msg()),
-            move |context| hopper(inventory, context.container_id, container_ref),
-        );
+    fn tick(&self) {
+        AbstractMinecart::tick_minecart(self, None, None, None);
+    }
 
-        InteractionResult::Success
+    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
+        AbstractMinecart::hurt_minecart(self, world, source, &vanilla_items::HOPPER_MINECART)
     }
 
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {

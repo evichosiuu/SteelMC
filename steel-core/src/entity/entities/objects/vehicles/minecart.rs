@@ -12,9 +12,16 @@ use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use super::abstract_minecart::AbstractMinecart;
+use steel_registry::vanilla_items;
+use steel_utils::types::InteractionHand;
+
+use crate::behavior::InteractionResult;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    DamageSource, Entity, EntityBase, EntityBaseLoad,
+    reset_forward_direction_of_relative_portal_position,
 };
+use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
 
@@ -93,6 +100,49 @@ impl Entity for MinecartEntity {
         10
     }
 
+    fn is_on_rails(&self) -> bool {
+        AbstractMinecart::is_on_rails(self)
+    }
+
+    fn tick(&self) {
+        AbstractMinecart::tick_minecart(self, None, None, None);
+    }
+
+    fn push_entity(&self, entity: &dyn Entity) {
+        if !self.is_vehicle() && !entity.is_passenger() && entity.as_mob().is_some() {
+            if let Some(world) = self.level() {
+                if let Some(minecart_shared) = world.get_entity_by_id(self.id()) {
+                    if entity.start_riding(&minecart_shared) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        let mut x = entity.position().x - self.position().x;
+        let mut z = entity.position().z - self.position().z;
+        let mut distance = x.abs().max(z.abs());
+        if distance >= 0.01 {
+            distance = distance.sqrt();
+            x /= distance;
+            z /= distance;
+            let scale = (1.0 / distance).min(1.0) * 0.05;
+            x *= scale;
+            z *= scale;
+
+            if !self.is_vehicle() && self.is_pushable() {
+                self.push_impulse(DVec3::new(-x, 0.0, -z));
+            }
+            if !entity.is_vehicle() && entity.is_pushable() {
+                entity.push_impulse(DVec3::new(x, 0.0, z));
+            }
+        }
+    }
+
+    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
+        AbstractMinecart::hurt_minecart(self, world, source, &vanilla_items::MINECART)
+    }
+
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
             portal_area,
@@ -112,6 +162,35 @@ impl Entity for MinecartEntity {
         let mut state = self.state.lock();
         if let Some(first_tick) = nbt.byte("HasTicked") {
             state.first_tick = first_tick != 0;
+        }
+    }
+
+    fn interact(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        if player.is_secondary_use_active() {
+            return InteractionResult::Pass;
+        }
+
+        if self.is_vehicle() {
+            return InteractionResult::Pass;
+        }
+
+        let Some(world) = self.level() else {
+            return InteractionResult::Pass;
+        };
+
+        let Some(minecart_shared) = world.get_entity_by_id(self.id()) else {
+            return InteractionResult::Pass;
+        };
+
+        if player.start_riding(&minecart_shared) {
+            InteractionResult::Success
+        } else {
+            InteractionResult::Pass
         }
     }
 }
