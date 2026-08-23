@@ -398,11 +398,22 @@ fn minecart_moves_along_closed_curve_rail_loop() {
     // Push the minecart in +X direction
     minecart.push_impulse(DVec3::new(0.3, 0.0, 0.0));
 
-    // Tick minecart multiple times around the loop
-    for _ in 0..20 {
+    // Tick minecart multiple times around the loop and track visited positions
+    let mut visited_blocks = std::collections::HashSet::new();
+    for _ in 0..40 {
         minecart.tick();
         assert!(minecart.is_on_rails(), "minecart should stay on rails while traversing loop");
+        let pos = minecart.position();
+        let block_pos = BlockPos::containing(pos.x, pos.y, pos.z);
+        visited_blocks.insert((block_pos.x(), block_pos.z()));
     }
+
+    assert_eq!(
+        visited_blocks.len(),
+        4,
+        "minecart should visit all 4 blocks in loop, visited {:?}",
+        visited_blocks
+    );
 }
 
 #[test]
