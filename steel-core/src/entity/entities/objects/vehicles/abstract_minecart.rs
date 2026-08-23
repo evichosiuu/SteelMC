@@ -23,11 +23,23 @@ impl AbstractMinecart {
     pub fn get_rail_pos_and_state(entity: &dyn Entity) -> Option<(BlockPos, BlockStateId)> {
         let world = entity.level()?;
         let pos = entity.position();
+        let vel = entity.velocity();
+
         let block_pos = BlockPos::containing(pos.x, pos.y, pos.z);
         let state = world.get_block_state(block_pos);
 
         if state.get_block().has_tag(&BlockTag::RAILS) {
             return Some((block_pos, state));
+        }
+
+        // If on boundary, check position slightly ahead in velocity direction
+        if vel.length_squared() > 0.00001 {
+            let ahead_pos = pos + vel.normalize() * 0.01;
+            let ahead_block_pos = BlockPos::containing(ahead_pos.x, ahead_pos.y, ahead_pos.z);
+            let ahead_state = world.get_block_state(ahead_block_pos);
+            if ahead_state.get_block().has_tag(&BlockTag::RAILS) {
+                return Some((ahead_block_pos, ahead_state));
+            }
         }
 
         let block_pos_below = block_pos.below();
@@ -176,23 +188,55 @@ impl AbstractMinecart {
             );
             let pt_a = center + off1;
             let pt_b = center + off2;
-            let dir = pt_b - pt_a;
-            let len = (dir.x * dir.x + dir.z * dir.z).sqrt();
 
-            let (start_pt, u_x, u_z, v_proj) = if len > 0.0 {
-                let u_x = dir.x / len;
-                let u_z = dir.z / len;
-                let v_proj = vel.x * u_x + vel.z * u_z;
-                if v_proj < 0.0 {
-                    (pt_b, -u_x, -u_z, -v_proj)
+            let (start_pt, end_pt, tan_start, tan_end, v_proj) = if is_curve(shape) {
+                let tan_a_in = dir_into_curve(off1);
+                let tan_b_in = dir_into_curve(off2);
+                let dir_chord = (pt_b - pt_a).normalize_or_zero();
+                let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
+
+                let proj = vel.x * dir_chord.x + vel.z * dir_chord.z;
+                if proj < 0.0 {
+                    (pt_b, pt_a, tan_b_in, -tan_a_in, speed)
                 } else {
-                    (pt_a, u_x, u_z, v_proj)
+                    (pt_a, pt_b, tan_a_in, -tan_b_in, speed)
                 }
             } else {
-                (pt_a, 0.0, 0.0, 0.0)
+                let dir = pt_b - pt_a;
+                let len = (dir.x * dir.x + dir.z * dir.z).sqrt();
+                if len > 0.0 {
+                    let u_x = dir.x / len;
+                    let u_z = dir.z / len;
+                    let v_p = vel.x * u_x + vel.z * u_z;
+                    if v_p < 0.0 {
+                        (
+                            pt_b,
+                            pt_a,
+                            DVec3::new(-u_x, 0.0, -u_z),
+                            DVec3::new(-u_x, 0.0, -u_z),
+                            -v_p,
+                        )
+                    } else {
+                        (
+                            pt_a,
+                            pt_b,
+                            DVec3::new(u_x, 0.0, u_z),
+                            DVec3::new(u_x, 0.0, u_z),
+                            v_p,
+                        )
+                    }
+                } else {
+                    (pt_a, pt_b, DVec3::ZERO, DVec3::ZERO, 0.0)
+                }
             };
 
+            let track_dir = end_pt - start_pt;
+            let len = (track_dir.x * track_dir.x + track_dir.z * track_dir.z).sqrt();
             let rel_pos = entity.position() - start_pt;
+
+            let u_x = if len > 0.0 { track_dir.x / len } else { 0.0 };
+            let u_z = if len > 0.0 { track_dir.z / len } else { 0.0 };
+
             let dist_along_track = (rel_pos.x * u_x + rel_pos.z * u_z).clamp(0.0, len);
             let new_dist = (dist_along_track + v_proj).clamp(0.0, len);
 
@@ -217,11 +261,23 @@ impl AbstractMinecart {
                 _ => {}
             }
 
-            vel.x = v_proj * u_x;
-            vel.z = v_proj * u_z;
+            let t = if len > 0.0 { new_dist / len } else { 0.0 };
+            let current_dir = if is_curve(shape) {
+                ((1.0 - t) * tan_start + t * tan_end).normalize_or_zero()
+            } else {
+                tan_start
+            };
+
+            vel.x = v_proj * current_dir.x;
+            vel.z = v_proj * current_dir.z;
 
             let new_pos = DVec3::new(target_x, target_y, target_z);
-            let _ = entity.try_set_position(new_pos);
+            let final_pos = if new_dist >= len || new_dist <= 0.0 {
+                new_pos + current_dir * 0.001
+            } else {
+                new_pos
+            };
+            let _ = entity.try_set_position(final_pos);
             entity.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
             entity.mark_velocity_sync();
         } else {
@@ -289,5 +345,29 @@ fn get_rail_offsets(shape: RailShape) -> (DVec3, DVec3) {
         RailShape::SouthWest => (DVec3::new(-0.5, 0.0, 0.0), DVec3::new(0.0, 0.0, 0.5)),
         RailShape::NorthWest => (DVec3::new(0.0, 0.0, -0.5), DVec3::new(-0.5, 0.0, 0.0)),
         RailShape::NorthEast => (DVec3::new(0.5, 0.0, 0.0), DVec3::new(0.0, 0.0, -0.5)),
+    }
+}
+
+fn is_curve(shape: RailShape) -> bool {
+    matches!(
+        shape,
+        RailShape::SouthEast
+            | RailShape::SouthWest
+            | RailShape::NorthWest
+            | RailShape::NorthEast
+    )
+}
+
+fn dir_into_curve(off: DVec3) -> DVec3 {
+    if off.z > 0.25 {
+        DVec3::new(0.0, 0.0, -1.0)
+    } else if off.z < -0.25 {
+        DVec3::new(0.0, 0.0, 1.0)
+    } else if off.x > 0.25 {
+        DVec3::new(-1.0, 0.0, 0.0)
+    } else if off.x < -0.25 {
+        DVec3::new(1.0, 0.0, 0.0)
+    } else {
+        DVec3::ZERO
     }
 }
