@@ -7,7 +7,7 @@ mod raw;
 pub use mobs::bosses::{DragonPhase, EnderDragonEntity};
 pub use mobs::hostile::{CreeperEntity, EndermiteEntity, SkeletonEntity, ZombieEntity};
 pub use mobs::neutral::EnderManEntity;
-pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
+pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity, VillagerEntity};
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};

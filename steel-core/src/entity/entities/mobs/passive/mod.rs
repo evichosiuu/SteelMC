@@ -4,8 +4,10 @@ mod chicken;
 mod cow;
 mod pig;
 mod sheep;
+mod villager;
 
 pub use chicken::ChickenEntity;
 pub use cow::CowEntity;
 pub use pig::PigEntity;
 pub use sheep::SheepEntity;
+pub use villager::VillagerEntity;
