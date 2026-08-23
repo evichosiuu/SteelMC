@@ -539,3 +539,199 @@ fn player_dismounts_minecart_on_shift_input() {
         "player should be placed at dismount position relative to minecart"
     );
 }
+
+#[test]
+fn boat_item_use_spawns_boat_entity() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("boat_item_spawn");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let water_pos = BlockPos::new(1, 64, 1);
+    world.set_block(water_pos, vanilla_blocks::WATER.default_state(), UpdateFlags::UPDATE_NONE);
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "boat_user", 100).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+    let player_ref = player.as_player().unwrap();
+    let _ = player_ref.try_set_position(DVec3::new(1.5, 66.0, 1.5));
+    player_ref.set_rotation((0.0, 90.0)); // looking straight down at water
+
+    let stack = steel_registry::item_stack::ItemStack::new(&steel_registry::vanilla_items::OAK_BOAT);
+    player_ref.inventory.lock().set_item(0, stack);
+
+    let mut context = crate::behavior::UseItemContext::new(
+        player_ref,
+        steel_utils::types::InteractionHand::MainHand,
+        &world,
+        player_ref.inventory.clone(),
+    );
+
+    let behavior = crate::behavior::items::BoatItem::new(&vanilla_entities::OAK_BOAT);
+    let result = crate::behavior::ItemBehavior::use_item(&behavior, &mut context);
+
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+
+    let entities = world.get_entities_in_aabb(&steel_utils::WorldAabb::new(0.0, 60.0, 0.0, 3.0, 70.0, 3.0));
+    let boats: Vec<_> = entities.into_iter().filter(|e| e.entity_type() == &vanilla_entities::OAK_BOAT).collect();
+    assert_eq!(boats.len(), 1);
+}
+
+#[test]
+fn standard_boat_allows_two_passengers_including_mob_and_player() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("standard_boat_passengers");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let boat: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::OAK_BOAT,
+            1100,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create boat");
+    world.try_add_entity(Arc::clone(&boat)).unwrap();
+
+    let pig: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::PIG,
+            1101,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create pig");
+    world.try_add_entity(Arc::clone(&pig)).unwrap();
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "boat_driver", 1102).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+
+    // Pig mounts boat
+    assert!(boat.can_add_passenger(pig.as_ref()));
+    assert!(pig.start_riding(&boat));
+    assert_eq!(boat.passengers().len(), 1);
+
+    // Player mounts boat as 2nd passenger
+    assert!(boat.can_add_passenger(player.as_ref()));
+    let player_ref = player.as_player().unwrap();
+    let result = boat.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+    assert_eq!(boat.passengers().len(), 2);
+
+    // 3rd entity cannot mount
+    let zombie: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::ZOMBIE,
+            1103,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create zombie");
+    world.try_add_entity(Arc::clone(&zombie)).unwrap();
+
+    assert!(!boat.can_add_passenger(zombie.as_ref()));
+    assert!(!zombie.start_riding(&boat));
+    assert_eq!(boat.passengers().len(), 2);
+}
+
+#[test]
+fn chest_boat_allows_one_passenger_and_opens_inventory_when_full_or_sneaking() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("chest_boat_passengers_inventory");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let chest_boat: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::OAK_CHEST_BOAT,
+            1200,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create chest boat");
+    world.try_add_entity(Arc::clone(&chest_boat)).unwrap();
+
+    let pig: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::PIG,
+            1201,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create pig");
+    world.try_add_entity(Arc::clone(&pig)).unwrap();
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "chest_boat_driver", 1202).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+
+    // Pig mounts chest boat
+    assert!(chest_boat.can_add_passenger(pig.as_ref()));
+    assert!(pig.start_riding(&chest_boat));
+    assert_eq!(chest_boat.passengers().len(), 1);
+
+    // 2nd passenger cannot mount chest boat
+    assert!(!chest_boat.can_add_passenger(player.as_ref()));
+
+    // Interacting with full chest boat opens container
+    let player_ref = player.as_player().unwrap();
+    let result = chest_boat.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+
+    // Unride pig
+    pig.stop_riding();
+    assert_eq!(chest_boat.passengers().len(), 0);
+
+    // Sneaking player opens container instead of mounting
+    player_ref.set_crouching(true);
+    let result = chest_boat.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+    assert_eq!(chest_boat.passengers().len(), 0);
+
+    // Non-sneaking player mounts empty chest boat
+    player_ref.set_crouching(false);
+    let result = chest_boat.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+    assert_eq!(chest_boat.passengers().len(), 1);
+}
+
+#[test]
+fn mob_pushes_into_boat_and_becomes_passenger() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("mob_push_boat");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let boat: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::OAK_BOAT,
+            1300,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create boat");
+    world.try_add_entity(Arc::clone(&boat)).unwrap();
+
+    let cow: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::COW,
+            1301,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create cow");
+    world.try_add_entity(Arc::clone(&cow)).unwrap();
+
+    // Push cow into boat
+    boat.push_entity(cow.as_ref());
+
+    assert_eq!(boat.passengers().len(), 1);
+    assert_eq!(cow.vehicle().map(|v| v.id()), Some(1300));
+}

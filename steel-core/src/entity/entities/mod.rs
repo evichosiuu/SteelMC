@@ -17,7 +17,8 @@ pub use objects::projectiles::{
     SnowballEntity, ThrownLingeringPotionEntity, ThrownSplashPotionEntity,
 };
 pub use objects::vehicles::{
-    ChestMinecartEntity, CommandBlockMinecartEntity, FurnaceMinecartEntity, HopperMinecartEntity,
-    MinecartEntity, SpawnerMinecartEntity, TntMinecartEntity,
+    BoatEntity, ChestBoatEntity, ChestMinecartEntity, CommandBlockMinecartEntity,
+    FurnaceMinecartEntity, HopperMinecartEntity, MinecartEntity, SpawnerMinecartEntity,
+    TntMinecartEntity,
 };
 pub use raw::RawEntity;
