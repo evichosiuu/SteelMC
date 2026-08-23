@@ -356,6 +356,56 @@ fn furnace_minecart_fuel_and_push_force() {
 }
 
 #[test]
+fn minecart_moves_along_closed_curve_rail_loop() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_curve_loop");
+    let chunk_pos = ChunkPos::new(0, 0);
+    insert_ready_full_chunk(&world, chunk_pos);
+
+    // Create a 2x2 closed loop of curved rails:
+    // (0,0): SouthEast  (1,0): SouthWest
+    // (0,1): NorthEast  (1,1): NorthWest
+    let loop_rails = [
+        (BlockPos::new(0, 64, 0), steel_registry::blocks::properties::RailShape::SouthEast),
+        (BlockPos::new(1, 64, 0), steel_registry::blocks::properties::RailShape::SouthWest),
+        (BlockPos::new(1, 64, 1), steel_registry::blocks::properties::RailShape::NorthWest),
+        (BlockPos::new(0, 64, 1), steel_registry::blocks::properties::RailShape::NorthEast),
+    ];
+
+    for (pos, shape) in loop_rails {
+        world.set_block(pos.below(), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+        let state = vanilla_blocks::RAIL
+            .default_state()
+            .set_value(&steel_registry::blocks::properties::BlockStateProperties::RAIL_SHAPE, shape);
+        world.set_block(pos, state, UpdateFlags::UPDATE_NONE);
+    }
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            900,
+            DVec3::new(0.5, 64.0625, 0.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    assert!(minecart.is_on_rails());
+
+    // Push the minecart in +X direction
+    minecart.push_impulse(DVec3::new(0.3, 0.0, 0.0));
+
+    // Tick minecart multiple times around the loop
+    for _ in 0..20 {
+        minecart.tick();
+        assert!(minecart.is_on_rails(), "minecart should stay on rails while traversing loop");
+    }
+}
+
+#[test]
 fn minecart_break_and_item_drop_on_hurt() {
     init_vanilla_registry();
     init_behaviors();

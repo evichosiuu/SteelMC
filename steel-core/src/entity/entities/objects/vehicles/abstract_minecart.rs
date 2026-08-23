@@ -154,7 +154,7 @@ impl AbstractMinecart {
                 }
             }
 
-            // Project velocity on straight rail shape
+            // Project velocity on straight or curved rail shape
             match shape {
                 RailShape::NorthSouth | RailShape::AscendingNorth | RailShape::AscendingSouth => {
                     vel.x = 0.0;
@@ -162,7 +162,54 @@ impl AbstractMinecart {
                 RailShape::EastWest | RailShape::AscendingEast | RailShape::AscendingWest => {
                     vel.z = 0.0;
                 }
-                _ => {}
+                RailShape::SouthEast => {
+                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
+                    if speed > 0.0001 {
+                        if vel.x.abs() > vel.z.abs() {
+                            vel.x = 0.0;
+                            vel.z = speed;
+                        } else {
+                            vel.x = speed;
+                            vel.z = 0.0;
+                        }
+                    }
+                }
+                RailShape::SouthWest => {
+                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
+                    if speed > 0.0001 {
+                        if vel.x.abs() > vel.z.abs() {
+                            vel.x = 0.0;
+                            vel.z = speed;
+                        } else {
+                            vel.x = -speed;
+                            vel.z = 0.0;
+                        }
+                    }
+                }
+                RailShape::NorthWest => {
+                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
+                    if speed > 0.0001 {
+                        if vel.x.abs() > vel.z.abs() {
+                            vel.x = 0.0;
+                            vel.z = -speed;
+                        } else {
+                            vel.x = -speed;
+                            vel.z = 0.0;
+                        }
+                    }
+                }
+                RailShape::NorthEast => {
+                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
+                    if speed > 0.0001 {
+                        if vel.x.abs() > vel.z.abs() {
+                            vel.x = 0.0;
+                            vel.z = -speed;
+                        } else {
+                            vel.x = speed;
+                            vel.z = 0.0;
+                        }
+                    }
+                }
             }
 
             // Apply rail drag
