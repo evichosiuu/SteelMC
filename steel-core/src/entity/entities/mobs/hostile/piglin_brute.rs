@@ -1,6 +1,6 @@
 //! Vanilla PiglinBrute entity implementation.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -9,7 +9,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PiglinBruteEntityData;
-use steel_registry::sound_events;
+use steel_registry::{sound_events, vanilla_entities};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
@@ -19,8 +19,8 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
-    MobBase, PathfinderMob,
+    ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, LivingEntityBase,
+    Mob, MobBase, PathfinderMob, RemovalReason, next_entity_id,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -32,6 +32,7 @@ pub struct PiglinBruteEntity {
     living_base: LivingEntityBase,
     mob_base: MobBase,
     entity_data: SyncMutex<PiglinBruteEntityData>,
+    time_in_overworld: SyncMutex<i32>,
 }
 
 unsafe impl DowncastType for PiglinBruteEntity {
@@ -86,6 +87,101 @@ impl PiglinBruteEntity {
             living_base,
             mob_base,
             entity_data: SyncMutex::new(entity_data),
+            time_in_overworld: SyncMutex::new(0),
+        }
+    }
+
+    #[must_use]
+    pub fn time_in_overworld(&self) -> i32 {
+        *self.time_in_overworld.lock()
+    }
+
+    pub fn set_time_in_overworld(&self, time: i32) {
+        *self.time_in_overworld.lock() = time;
+    }
+
+    #[must_use]
+    pub fn is_immune_to_zombification(&self) -> bool {
+        *self
+            .entity_data
+            .lock()
+            .abstract_piglin()
+            .immune_to_zombification
+            .get()
+    }
+
+    pub fn set_immune_to_zombification(&self, immune: bool) {
+        self.entity_data
+            .lock()
+            .abstract_piglin_mut()
+            .immune_to_zombification
+            .set(immune);
+    }
+
+    fn tick_zombification(&self) {
+        if !LivingEntity::is_alive(self) || self.is_removed() {
+            return;
+        }
+
+        if self.is_immune_to_zombification() {
+            self.set_time_in_overworld(0);
+            return;
+        }
+
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        if world.dimension_type.piglins_zombify {
+            let time = self.time_in_overworld() + 1;
+            self.set_time_in_overworld(time);
+            if time > 300 {
+                self.zombify(&world);
+            }
+        } else {
+            let time = self.time_in_overworld();
+            if time > 0 {
+                self.set_time_in_overworld(time - 1);
+            }
+        }
+    }
+
+    fn zombify(&self, world: &Arc<World>) {
+        let pos = self.position();
+        let world_weak = Arc::downgrade(world);
+
+        let Some(zombified) = ENTITIES.create(
+            &vanilla_entities::ZOMBIFIED_PIGLIN,
+            next_entity_id(),
+            pos,
+            world_weak,
+        ) else {
+            return;
+        };
+
+        zombified.set_rotation(self.rotation());
+        zombified.set_velocity(self.velocity());
+
+        if let Some(custom_name) = self.custom_name() {
+            zombified.set_custom_name(Some(custom_name));
+        }
+        zombified.set_custom_name_visible(self.is_custom_name_visible());
+
+        if self.is_persistence_required() {
+            if let Some(mob) = zombified.as_mob() {
+                mob.set_persistence_required();
+            }
+        }
+
+        self.play_sound(
+            &sound_events::ENTITY_PIGLIN_BRUTE_CONVERTED_TO_ZOMBIFIED,
+            1.0,
+            1.0,
+        );
+        self.set_removed(RemovalReason::Killed);
+
+        if let Err(error) = world.try_add_entity(zombified) {
+            log::debug!("failed to spawn zombified piglin from brute: {error}");
         }
     }
 }
@@ -94,14 +190,28 @@ impl Entity for PiglinBruteEntity {
     fn base(&self) -> &EntityBase { &self.base }
     fn entity_type(&self) -> EntityTypeRef { self.entity_type }
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> { Some(&self.entity_data) }
-    fn base_tick(&self) { Mob::base_tick_mob(self); }
+    fn base_tick(&self) {
+        Mob::base_tick_mob(self);
+        self.tick_zombification();
+    }
     fn sound_source(&self) -> SoundSource { SoundSource::Hostile }
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_mob(nbt);
+        nbt.insert("TimeInOverworld", self.time_in_overworld());
+        if self.is_immune_to_zombification() {
+            nbt.insert("IsImmuneToZombification", true);
+        }
     }
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
+        if let Some(time) = nbt.int("TimeInOverworld") {
+            self.set_time_in_overworld(time);
+        }
+        let immune = nbt
+            .byte("IsImmuneToZombification")
+            .map_or(false, |b| b != 0);
+        self.set_immune_to_zombification(immune);
     }
 }
 

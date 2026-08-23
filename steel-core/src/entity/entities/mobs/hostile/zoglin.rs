@@ -88,6 +88,15 @@ impl ZoglinEntity {
             entity_data: SyncMutex::new(entity_data),
         }
     }
+
+    #[must_use]
+    pub fn is_baby(&self) -> bool {
+        *self.entity_data.lock().zoglin().baby.get()
+    }
+
+    pub fn set_baby(&self, baby: bool) {
+        self.entity_data.lock().zoglin_mut().baby.set(baby);
+    }
 }
 
 impl Entity for ZoglinEntity {
@@ -99,9 +108,16 @@ impl Entity for ZoglinEntity {
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_mob(nbt);
+        if self.is_baby() {
+            nbt.insert("IsBaby", true);
+        }
     }
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
+        let baby = nbt
+            .byte("IsBaby")
+            .map_or(false, |b| b != 0);
+        self.set_baby(baby);
     }
 }
 
