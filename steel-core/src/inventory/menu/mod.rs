@@ -153,6 +153,13 @@ impl Menu {
         kind.on_rename(behavior, name.into(), player);
     }
 
+    /// Selects a trade by index in a merchant menu.
+    pub fn select_trade(&mut self, trade_index: usize, player: &Player) {
+        let mut guard = self.behavior.lock_all_containers();
+        let Self { behavior, kind, .. } = self;
+        kind.on_select_trade(behavior, &mut guard, trade_index, player);
+    }
+
     /// Clears or counts crafting-grid items in the base inventory menu,
     /// returning the number cleared or counted. Returns 0 for any other menu.
     pub(crate) fn clear_or_count_crafting_items(

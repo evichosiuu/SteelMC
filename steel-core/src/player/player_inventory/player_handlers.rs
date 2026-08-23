@@ -3,8 +3,8 @@ use std::{f32::consts::TAU, mem, sync::Arc};
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSelectTrade,
+    SSetCarriedItem, SSetCreativeModeSlot,
 };
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{
@@ -213,6 +213,24 @@ impl Player {
                 if i32::from(menu.behavior().container_id()) == packet.container_id {
                     self.process_container_click(&mut menu, packet);
                 }
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
+    }
+
+    /// Handles a trade selection packet.
+    pub fn handle_select_trade(self: &Arc<Self>, packet: SSelectTrade) {
+        match self.take_open_menu_for_callback(None) {
+            Ok(mut menu) => {
+                if menu.still_valid(self) {
+                    if let Ok(slot) = usize::try_from(packet.selected_slot) {
+                        menu.select_trade(slot, self);
+                    }
+                }
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                log::debug!("select trade without an open menu");
             }
             Err(OpenMenuUnavailable::Unavailable) => {}
         }

@@ -33,6 +33,16 @@ pub trait MenuKind: ErasedType + Send + Sync {
     /// any result. No-op for kinds without a rename input.
     fn on_rename(&mut self, _behavior: &mut MenuBehavior, _name: String, _player: &Player) {}
 
+    /// Handles trade selection in a merchant menu.
+    fn on_select_trade(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        _trade_index: usize,
+        _player: &Player,
+    ) {
+    }
+
     /// Runs after initial contents are built but before they're sent, so
     /// anything populated here appears in the first render.
     fn on_open(

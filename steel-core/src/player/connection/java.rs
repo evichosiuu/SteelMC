@@ -17,7 +17,7 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSelectTrade, SSetCarriedItem,
     SSetCommandMinecart, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
     SUseItemOn,
 };
@@ -95,6 +95,7 @@ enum ScheduledPlayPacketKind {
     PlayerCommand(SPlayerCommand),
     PlayerAbilities(SPlayerAbilities),
     RenameItem(SRenameItem),
+    SelectTrade(SSelectTrade),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
     SetCarriedItem(SSetCarriedItem),
@@ -202,6 +203,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
             | ScheduledPlayPacketKind::RenameItem(_)
+            | ScheduledPlayPacketKind::SelectTrade(_)
             | ScheduledPlayPacketKind::SetCommandMinecart(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
@@ -311,6 +313,7 @@ impl ScheduledPlayPacket {
                 player.handle_player_abilities(packet);
             }
             ScheduledPlayPacketKind::RenameItem(packet) => player.handle_rename_item(packet),
+            ScheduledPlayPacketKind::SelectTrade(packet) => player.handle_select_trade(packet),
             ScheduledPlayPacketKind::UseItemOn(packet) => player.handle_use_item_on(packet),
             ScheduledPlayPacketKind::UseItem(packet) => player.handle_use_item(packet),
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
@@ -747,6 +750,9 @@ impl JavaConnection {
             )),
             play::S_RENAME_ITEM => scheduled(ScheduledPlayPacketKind::RenameItem(
                 SRenameItem::read_packet(data)?,
+            )),
+            play::S_SELECT_TRADE => scheduled(ScheduledPlayPacketKind::SelectTrade(
+                SSelectTrade::read_packet(data)?,
             )),
             play::S_USE_ITEM_ON => scheduled(ScheduledPlayPacketKind::UseItemOn(
                 SUseItemOn::read_packet(data)?,

@@ -11,3 +11,4 @@ pub mod menu;
 pub mod prelude;
 pub mod recipe_manager;
 pub mod slots;
+pub mod trade;
