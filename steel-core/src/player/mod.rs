@@ -1622,6 +1622,13 @@ impl LivingEntity for Player {
             return true;
         }
 
+        {
+            let abilities = self.abilities.lock();
+            if abilities.invulnerable && !source.bypasses_invulnerability() {
+                return true;
+            }
+        }
+
         if let Some(rule) = Self::disabled_damage_game_rule(source) {
             return !world.get_game_rule(rule);
         }
