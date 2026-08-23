@@ -42,7 +42,7 @@ impl ItemCost {
 
 impl WriteTo for ItemCost {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        VarInt(self.item.id as i32).write(writer)?;
+        VarInt(self.item.id() as i32).write(writer)?;
         VarInt(self.count).write(writer)?;
         self.components.write(writer)?;
         Ok(())
