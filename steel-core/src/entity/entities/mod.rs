@@ -13,8 +13,8 @@ pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::AreaEffectCloudEntity;
 pub use objects::projectiles::{
-    DragonFireballEntity, EggEntity, EnderPearlEntity, FireworkRocketEntity, SnowballEntity,
-    ThrownLingeringPotionEntity, ThrownSplashPotionEntity,
+    DragonFireballEntity, EggEntity, EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity,
+    SnowballEntity, ThrownLingeringPotionEntity, ThrownSplashPotionEntity,
 };
 pub use objects::vehicles::{
     ChestMinecartEntity, CommandBlockMinecartEntity, FurnaceMinecartEntity, HopperMinecartEntity,
