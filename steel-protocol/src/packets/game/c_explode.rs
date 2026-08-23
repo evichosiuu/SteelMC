@@ -2,7 +2,7 @@ use glam::DVec3;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_EXPLODE;
 use steel_registry::particle_type::ParticleData;
-use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 
 /// Sent when an explosion occurs to trigger visual effects, sounds, and optional player knockback.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
@@ -14,13 +14,12 @@ pub struct CExplode {
     pub knockback: Option<DVec3>,
     /// The particle effect spawned at the explosion position.
     pub particle: ParticleData,
-    /// The sound event ID (`Holder<SoundEvent>`) played for the explosion.
-    #[write(as = VarInt)]
-    pub sound_id: i32,
+    /// The sound event holder (`Holder<SoundEvent>`) played for the explosion.
+    pub sound: SoundEventHolder,
 }
 
 impl CExplode {
-    /// Creates a new explosion packet.
+    /// Creates a new explosion packet with a registry sound event reference.
     #[must_use]
     pub fn new(
         center: DVec3,
@@ -32,7 +31,23 @@ impl CExplode {
             center,
             knockback,
             particle,
-            sound_id: sound.packet_holder_id(),
+            sound: SoundEventHolder::registry(sound),
+        }
+    }
+
+    /// Creates a new explosion packet with a sound event holder.
+    #[must_use]
+    pub fn with_sound_holder(
+        center: DVec3,
+        knockback: Option<DVec3>,
+        particle: ParticleData,
+        sound: SoundEventHolder,
+    ) -> Self {
+        Self {
+            center,
+            knockback,
+            particle,
+            sound,
         }
     }
 }
