@@ -2,12 +2,16 @@
 
 use std::{
     mem,
-    sync::{Arc, Weak},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
@@ -15,6 +19,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
+use crate::player::Player;
 use crate::world::World;
 
 /// Number of slots in a shulker box (27).
@@ -25,6 +30,7 @@ pub struct ShulkerBoxBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<ShulkerBoxContainer>>,
     container_ref: ContainerRef,
+    open_count: AtomicU32,
 }
 
 struct ShulkerBoxContainer {
@@ -62,6 +68,7 @@ impl ShulkerBoxBlockEntity {
             ),
             base,
             container,
+            open_count: AtomicU32::new(0),
         }
     }
 }
@@ -121,6 +128,25 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     fn container_ref(&self) -> Option<ContainerRef> {
         Some(self.container_ref.clone())
+    }
+
+    fn start_open(&self, _player: &Player) {
+        let count = self.open_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if count == 1 {
+            if let Some(world) = self.get_level() {
+                world.block_event(self.get_block_pos(), self.get_block_state().get_block(), 1, 1);
+            }
+        }
+    }
+
+    fn stop_open(&self, _player: &Player) {
+        let prev = self.open_count.fetch_sub(1, Ordering::Relaxed);
+        let count = prev.saturating_sub(1);
+        if count == 0 {
+            if let Some(world) = self.get_level() {
+                world.block_event(self.get_block_pos(), self.get_block_state().get_block(), 1, 0);
+            }
+        }
     }
 }
 

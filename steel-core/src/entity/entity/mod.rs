@@ -522,7 +522,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.stopRiding`.
     fn stop_riding(&self) {
-        self.base().stop_riding();
+        if let Some(vehicle) = self.vehicle() {
+            let passenger = self.as_entity_event_source();
+            let dismount_pos = dismount_helper::get_dismount_location(vehicle.as_ref(), passenger);
+            self.base().stop_riding();
+            if let Some(player) = self.as_player() {
+                let (yaw, pitch) = self.rotation();
+                let _ = player.teleport(dismount_pos, yaw, pitch);
+            } else if let Err(error) = self.try_set_position(dismount_pos) {
+                log::debug!(
+                    "Failed to set dismount position for entity {}: {error}",
+                    self.id()
+                );
+            }
+        } else {
+            self.base().stop_riding();
+        }
     }
 
     /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.

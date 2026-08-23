@@ -5,19 +5,27 @@
 
 use std::{
     mem,
-    sync::{Arc, Weak},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_protocol::packets::game::SoundSource;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{sound_events, vanilla_block_entity_types};
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
+use crate::player::Player;
 use crate::world::World;
 
 /// Number of slots in a barrel (3 rows of 9).
@@ -30,6 +38,7 @@ pub struct BarrelBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<BarrelContainer>>,
     container_ref: ContainerRef,
+    open_count: AtomicU32,
 }
 
 struct BarrelContainer {
@@ -65,6 +74,7 @@ impl BarrelBlockEntity {
             container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
             base,
             container,
+            open_count: AtomicU32::new(0),
         }
     }
 }
@@ -136,6 +146,57 @@ impl BlockEntity for BarrelBlockEntity {
 
     fn container_ref(&self) -> Option<ContainerRef> {
         Some(self.container_ref.clone())
+    }
+
+    fn start_open(&self, _player: &Player) {
+        let count = self.open_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if count == 1 {
+            if let Some(world) = self.get_level() {
+                let pos = self.get_block_pos();
+                let state = self.get_block_state();
+                if let Some(open) = state.try_get_value(&BlockStateProperties::OPEN) {
+                    if !open {
+                        let new_state = state.set_value(&BlockStateProperties::OPEN, true);
+                        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+                        let pitch = 0.9 + rand::random::<f32>() * 0.1;
+                        world.play_sound(
+                            &sound_events::BLOCK_BARREL_OPEN,
+                            SoundSource::Blocks,
+                            pos,
+                            0.5,
+                            pitch,
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn stop_open(&self, _player: &Player) {
+        let prev = self.open_count.fetch_sub(1, Ordering::Relaxed);
+        let count = prev.saturating_sub(1);
+        if count == 0 {
+            if let Some(world) = self.get_level() {
+                let pos = self.get_block_pos();
+                let state = self.get_block_state();
+                if let Some(open) = state.try_get_value(&BlockStateProperties::OPEN) {
+                    if open {
+                        let new_state = state.set_value(&BlockStateProperties::OPEN, false);
+                        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+                        let pitch = 0.9 + rand::random::<f32>() * 0.1;
+                        world.play_sound(
+                            &sound_events::BLOCK_BARREL_CLOSE,
+                            SoundSource::Blocks,
+                            pos,
+                            0.5,
+                            pitch,
+                            None,
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 

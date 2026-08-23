@@ -154,64 +154,6 @@ impl AbstractMinecart {
                 }
             }
 
-            // Project velocity on straight or curved rail shape
-            match shape {
-                RailShape::NorthSouth | RailShape::AscendingNorth | RailShape::AscendingSouth => {
-                    vel.x = 0.0;
-                }
-                RailShape::EastWest | RailShape::AscendingEast | RailShape::AscendingWest => {
-                    vel.z = 0.0;
-                }
-                RailShape::SouthEast => {
-                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
-                    if speed > 0.0001 {
-                        if vel.x.abs() > vel.z.abs() {
-                            vel.x = 0.0;
-                            vel.z = speed;
-                        } else {
-                            vel.x = speed;
-                            vel.z = 0.0;
-                        }
-                    }
-                }
-                RailShape::SouthWest => {
-                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
-                    if speed > 0.0001 {
-                        if vel.x.abs() > vel.z.abs() {
-                            vel.x = 0.0;
-                            vel.z = speed;
-                        } else {
-                            vel.x = -speed;
-                            vel.z = 0.0;
-                        }
-                    }
-                }
-                RailShape::NorthWest => {
-                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
-                    if speed > 0.0001 {
-                        if vel.x.abs() > vel.z.abs() {
-                            vel.x = 0.0;
-                            vel.z = -speed;
-                        } else {
-                            vel.x = -speed;
-                            vel.z = 0.0;
-                        }
-                    }
-                }
-                RailShape::NorthEast => {
-                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt();
-                    if speed > 0.0001 {
-                        if vel.x.abs() > vel.z.abs() {
-                            vel.x = 0.0;
-                            vel.z = -speed;
-                        } else {
-                            vel.x = speed;
-                            vel.z = 0.0;
-                        }
-                    }
-                }
-            }
-
             // Apply rail drag
             let drag = if entity.is_vehicle() { 0.98 } else { 0.96 };
             vel.x *= drag;
@@ -225,23 +167,60 @@ impl AbstractMinecart {
                 vel.z = (vel.z / speed) * max_speed;
             }
 
+            // Project velocity and position onto track segment
+            let (off1, off2) = get_rail_offsets(shape);
+            let center = DVec3::new(
+                f64::from(rail_pos.x()) + 0.5,
+                f64::from(rail_pos.y()) + 0.5,
+                f64::from(rail_pos.z()) + 0.5,
+            );
+            let pt_a = center + off1;
+            let pt_b = center + off2;
+            let dir = pt_b - pt_a;
+            let len = (dir.x * dir.x + dir.z * dir.z).sqrt();
+
+            let (start_pt, u_x, u_z, v_proj) = if len > 0.0 {
+                let u_x = dir.x / len;
+                let u_z = dir.z / len;
+                let v_proj = vel.x * u_x + vel.z * u_z;
+                if v_proj < 0.0 {
+                    (pt_b, -u_x, -u_z, -v_proj)
+                } else {
+                    (pt_a, u_x, u_z, v_proj)
+                }
+            } else {
+                (pt_a, 0.0, 0.0, 0.0)
+            };
+
+            let rel_pos = entity.position() - start_pt;
+            let dist_along_track = (rel_pos.x * u_x + rel_pos.z * u_z).clamp(0.0, len);
+            let new_dist = (dist_along_track + v_proj).clamp(0.0, len);
+
+            let target_x = start_pt.x + u_x * new_dist;
+            let target_z = start_pt.z + u_z * new_dist;
+
             // Calculate Y elevation
             let mut target_y = f64::from(rail_pos.y()) + 0.0625;
-            let rel_x = (entity.position().x - f64::from(rail_pos.x())).clamp(0.0, 1.0);
-            let rel_z = (entity.position().z - f64::from(rail_pos.z())).clamp(0.0, 1.0);
             match shape {
-                RailShape::AscendingEast => target_y += rel_x,
-                RailShape::AscendingWest => target_y += 1.0 - rel_x,
-                RailShape::AscendingSouth => target_y += rel_z,
-                RailShape::AscendingNorth => target_y += 1.0 - rel_z,
+                RailShape::AscendingEast => {
+                    target_y += (target_x - f64::from(rail_pos.x())).clamp(0.0, 1.0);
+                }
+                RailShape::AscendingWest => {
+                    target_y += 1.0 - (target_x - f64::from(rail_pos.x())).clamp(0.0, 1.0);
+                }
+                RailShape::AscendingSouth => {
+                    target_y += (target_z - f64::from(rail_pos.z())).clamp(0.0, 1.0);
+                }
+                RailShape::AscendingNorth => {
+                    target_y += 1.0 - (target_z - f64::from(rail_pos.z())).clamp(0.0, 1.0);
+                }
                 _ => {}
             }
 
-            let new_pos = DVec3::new(
-                entity.position().x + vel.x,
-                target_y,
-                entity.position().z + vel.z,
-            );
+            vel.x = v_proj * u_x;
+            vel.z = v_proj * u_z;
+
+            let new_pos = DVec3::new(target_x, target_y, target_z);
             let _ = entity.try_set_position(new_pos);
             entity.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
             entity.mark_velocity_sync();
@@ -295,5 +274,20 @@ impl AbstractMinecart {
         }
 
         true
+    }
+}
+
+fn get_rail_offsets(shape: RailShape) -> (DVec3, DVec3) {
+    match shape {
+        RailShape::NorthSouth => (DVec3::new(0.0, 0.0, -0.5), DVec3::new(0.0, 0.0, 0.5)),
+        RailShape::EastWest => (DVec3::new(-0.5, 0.0, 0.0), DVec3::new(0.5, 0.0, 0.0)),
+        RailShape::AscendingEast => (DVec3::new(-0.5, -0.5, 0.0), DVec3::new(0.5, 0.0, 0.0)),
+        RailShape::AscendingWest => (DVec3::new(-0.5, 0.0, 0.0), DVec3::new(0.5, -0.5, 0.0)),
+        RailShape::AscendingNorth => (DVec3::new(0.0, 0.0, -0.5), DVec3::new(0.0, -0.5, 0.5)),
+        RailShape::AscendingSouth => (DVec3::new(0.0, -0.5, -0.5), DVec3::new(0.0, 0.0, 0.5)),
+        RailShape::SouthEast => (DVec3::new(0.0, 0.0, 0.5), DVec3::new(0.5, 0.0, 0.0)),
+        RailShape::SouthWest => (DVec3::new(-0.5, 0.0, 0.0), DVec3::new(0.0, 0.0, 0.5)),
+        RailShape::NorthWest => (DVec3::new(0.0, 0.0, -0.5), DVec3::new(-0.5, 0.0, 0.0)),
+        RailShape::NorthEast => (DVec3::new(0.5, 0.0, 0.0), DVec3::new(0.0, 0.0, -0.5)),
     }
 }

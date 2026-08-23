@@ -2,18 +2,22 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_macros::item_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::level_events;
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, types::UpdateFlags};
+use steel_registry::{level_events, sound_events, vanilla_blocks, vanilla_entities};
+use steel_utils::{BlockPos, Identifier, types::UpdateFlags};
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
-use crate::behavior::context::{InteractionResult, UseOnContext};
+use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
+use crate::entity::entities::EyeOfEnderEntity;
+use crate::entity::{Entity, SharedEntity, next_entity_id};
 use crate::world::{LevelReader, World};
+use crate::worldgen::generator::ChunkGenerator;
 
 const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
 const END_PORTAL_PATTERN: [[char; 5]; 5] = [
@@ -35,8 +39,9 @@ const PATTERN_DIRECTIONS: [Direction; 6] = [
 /// Behavior for the ender eye item.
 ///
 /// When used on an end portal frame without an eye, places the eye
-/// and checks for portal completion.
-#[item_behavior]
+/// and checks for portal completion. When used in air/general use, throws an
+/// Eye of Ender that flies toward the nearest stronghold.
+#[item_behavior(class = "EnderEyeItem")]
 pub struct EnderEyeItem;
 
 impl ItemBehavior for EnderEyeItem {
@@ -79,6 +84,70 @@ impl ItemBehavior for EnderEyeItem {
 
         if let Some(portal_origin) = find_completed_end_portal_origin(context.world, clicked_pos) {
             spawn_end_portal(context.world, portal_origin);
+        }
+
+        InteractionResult::Success
+    }
+
+    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        let player = context.player;
+        let world = context.world;
+
+        let player_pos = player.position();
+        let block_origin = BlockPos::from(player_pos);
+
+        let target_pos = if let Some(structure_generator) = world
+            .chunk_map
+            .world_gen_context
+            .generator
+            .structure_generator()
+            && let Some(plan) = structure_generator
+                .locate_plan_for_structures(&[Identifier::vanilla_static("stronghold")])
+            && let candidates = plan.ring_candidates(block_origin)
+            && let Some(first_candidate) = candidates.first()
+        {
+            first_candidate.locate_pos
+        } else {
+            let (yaw, pitch) = player.rotation();
+            let yaw_rad = (yaw + 90.0).to_radians();
+            let pitch_rad = (-pitch).to_radians();
+            let dx = f64::from(pitch_rad.cos() * yaw_rad.cos());
+            let dz = f64::from(pitch_rad.cos() * yaw_rad.sin());
+            let dy = f64::from(pitch_rad.sin());
+            BlockPos::from(player_pos + DVec3::new(dx * 12.0, dy * 12.0, dz * 12.0))
+        };
+
+        let pitch = 1.0 / (rand::random::<f32>() * 0.4 + 1.2);
+        world.play_sound_at(
+            &sound_events::ENTITY_ENDER_EYE_LAUNCH,
+            SoundSource::Neutral,
+            player_pos,
+            0.5,
+            pitch,
+            None,
+        );
+
+        let thrown_item = context.inv.with_item(|item| item.copy_with_count(1));
+
+        let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - 0.1, player_pos.z);
+        let eye = Arc::new(EyeOfEnderEntity::new(
+            &vanilla_entities::EYE_OF_ENDER,
+            next_entity_id(),
+            spawn_pos,
+            Arc::downgrade(world),
+        ));
+
+        eye.set_item(thrown_item);
+        eye.signal_to(target_pos);
+
+        let entity: SharedEntity = eye;
+        if let Err(error) = world.try_add_entity(entity) {
+            log::debug!("failed to spawn eye of ender: {error}");
+            return InteractionResult::Fail;
+        }
+
+        if !player.has_infinite_materials() {
+            context.inv.with_item(|item| item.shrink(1));
         }
 
         InteractionResult::Success
@@ -177,14 +246,21 @@ fn spawn_end_portal(world: &Arc<World>, portal_origin: BlockPos) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities, vanilla_items};
+    use steel_utils::types::InteractionHand;
     use steel_utils::{BlockPos, BlockStateId};
 
-    use crate::test_support::TestLevel;
+    use crate::behavior::ItemBehavior;
+    use crate::behavior::context::{InteractionResult, UseItemContext};
+    use crate::entity::Entity;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
-    use super::find_completed_end_portal_origin;
+    use super::{EnderEyeItem, find_completed_end_portal_origin};
 
     fn eye_frame(facing: Direction) -> BlockStateId {
         vanilla_blocks::END_PORTAL_FRAME
@@ -193,7 +269,7 @@ mod tests {
             .set_value(&BlockStateProperties::EYE, true)
     }
 
-    fn place_inward_frame_ring(level: &TestLevel, origin: BlockPos) {
+    fn place_inward_frame_ring(level: &crate::test_support::TestLevel, origin: BlockPos) {
         for offset in 0..3 {
             level.set_test_block(origin.offset(offset, 0, -1), eye_frame(Direction::South));
             level.set_test_block(origin.offset(offset, 0, 3), eye_frame(Direction::North));
@@ -206,7 +282,7 @@ mod tests {
     fn end_portal_pattern_matches_player_built_inward_layout() {
         init_vanilla_registry();
 
-        let level = TestLevel::default();
+        let level = crate::test_support::TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
         place_inward_frame_ring(&level, origin);
 
@@ -232,7 +308,7 @@ mod tests {
     fn end_portal_pattern_rejects_wrong_side_facing() {
         init_vanilla_registry();
 
-        let level = TestLevel::default();
+        let level = crate::test_support::TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
         place_inward_frame_ring(&level, origin);
         level.set_test_block(origin.offset(-1, 0, 1), eye_frame(Direction::West));
@@ -244,7 +320,7 @@ mod tests {
     fn end_portal_pattern_uses_vanilla_front_top_left_offset() {
         init_vanilla_registry();
 
-        let level = TestLevel::default();
+        let level = crate::test_support::TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
         place_inward_frame_ring(&level, origin);
         for offset in 0..3 {
@@ -256,5 +332,36 @@ mod tests {
             find_completed_end_portal_origin(&level, origin.offset(1, 0, -1)),
             Some(origin.offset(0, 0, -4))
         );
+    }
+
+    #[test]
+    fn use_item_throws_ender_eye_and_spawns_entity() {
+        init_vanilla_registry();
+
+        let world = fresh_test_world("use_item_throws_ender_eye");
+        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Thrower", 1).build();
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::with_count(&vanilla_items::ENDER_EYE, 16));
+
+        let mut context = UseItemContext::new(&player, InteractionHand::MainHand, &world, player.inventory.clone());
+
+        let behavior = EnderEyeItem;
+        let result = behavior.use_item(&mut context);
+
+        assert_eq!(result, InteractionResult::Success);
+
+        let remaining = player.inventory.lock().get_item_in_hand(InteractionHand::MainHand).count();
+        assert_eq!(remaining, 15);
+
+        let eye_entity = world
+            .get_entities_in_aabb(&player.bounding_box().inflate(10.0))
+            .into_iter()
+            .find(|e| e.entity_type() == &vanilla_entities::EYE_OF_ENDER);
+
+        assert!(eye_entity.is_some(), "Eye of Ender entity should be spawned in the world");
     }
 }

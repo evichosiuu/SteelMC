@@ -19,8 +19,9 @@ use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BrewingStandBlockEntity, BrushableBlockEntity,
     ChestBlockEntity, ChiseledBookShelfBlockEntity, ComparatorBlockEntity, CrafterBlockEntity,
     DaylightDetectorBlockEntity, DispenserBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, FurnaceBlockEntity, HopperBlockEntity, PistonMovingBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, ShulkerBoxBlockEntity, SignBlockEntity,
+    EndPortalBlockEntity, EnderChestBlockEntity, FurnaceBlockEntity, HopperBlockEntity,
+    PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity, ShulkerBoxBlockEntity,
+    SignBlockEntity,
 };
 use crate::world::World;
 
@@ -231,6 +232,12 @@ pub fn init_block_entities() {
         registry.register(
             &vanilla_block_entity_types::TRAPPED_CHEST,
             |level, pos, state| Arc::new(ChestBlockEntity::new_trapped(level, pos, state)),
+        );
+
+        // Register ender chest block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENDER_CHEST,
+            |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
         // Register shulker box block entity factory
