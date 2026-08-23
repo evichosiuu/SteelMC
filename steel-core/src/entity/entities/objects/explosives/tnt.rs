@@ -152,7 +152,7 @@ impl Entity for PrimedTntEntity {
         Some(&self.entity_data)
     }
 
-    fn base_tick(&self) {
+    fn tick(&self) {
         self.entity_base_tick();
 
         // Gravity and motion damping
@@ -173,9 +173,9 @@ impl Entity for PrimedTntEntity {
             self.set_removed(RemovalReason::Discarded);
             if let Some(world) = self.level() {
                 let center = self.position() + DVec3::new(0.0, 0.49, 0.0);
-                let owner_entity = self.owner_id().and_then(|id| world.get_entity_by_id(id));
+                let source = world.get_entity_by_id(self.id());
                 world.explode(
-                    owner_entity,
+                    source,
                     None,
                     center,
                     4.0,
@@ -220,5 +220,26 @@ mod tests {
         let tnt = PrimedTntEntity::new_with_fuse(&vanilla_entities::TNT, 1, DVec3::ZERO, Weak::new(), 40, Some(42));
         assert_eq!(tnt.fuse(), 40);
         assert_eq!(tnt.owner_id(), Some(42));
+    }
+
+    #[test]
+    fn tnt_entity_tick_decrements_fuse() {
+        init_vanilla_registry();
+        let world = crate::test_support::fresh_test_world("tnt_tick_fuse");
+        crate::test_support::insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+        let tnt = Arc::new(PrimedTntEntity::new_with_fuse(
+            &vanilla_entities::TNT,
+            100,
+            DVec3::new(0.0, 64.0, 0.0),
+            Arc::downgrade(&world),
+            5,
+            None,
+        ));
+        world.try_add_entity(tnt.clone()).unwrap();
+
+        assert_eq!(tnt.fuse(), 5);
+        tnt.tick();
+        assert_eq!(tnt.fuse(), 4);
+        assert!(!tnt.is_removed());
     }
 }

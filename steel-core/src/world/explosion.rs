@@ -235,6 +235,26 @@ impl<'a> Explosion<'a> {
                 DamageSource::environment(&vanilla_damage_types::PLAYER_EXPLOSION)
                     .with_causing_entity(player.id())
                     .with_source_position(self.center)
+            } else if let Some(tnt) = source.downcast_ref::<PrimedTntEntity>() {
+                if let Some(owner_id) = tnt.owner_id() {
+                    let owner_is_player = self
+                        .world
+                        .get_entity_by_id(owner_id)
+                        .map_or(false, |e| e.as_player().is_some());
+                    let damage_type = if owner_is_player {
+                        &vanilla_damage_types::PLAYER_EXPLOSION
+                    } else {
+                        &vanilla_damage_types::EXPLOSION
+                    };
+                    DamageSource::environment(damage_type)
+                        .with_causing_entity(owner_id)
+                        .with_direct_entity(source.id())
+                        .with_source_position(self.center)
+                } else {
+                    DamageSource::environment(&vanilla_damage_types::EXPLOSION)
+                        .with_direct_entity(source.id())
+                        .with_source_position(self.center)
+                }
             } else {
                 DamageSource::environment(&vanilla_damage_types::EXPLOSION)
                     .with_causing_entity(source.id())
@@ -325,8 +345,14 @@ impl<'a> Explosion<'a> {
 
             let center = block_pos.0.as_dvec3() + DVec3::new(0.5, 0.0, 0.5);
             let short_fuse = rand::random_range(10..=30);
-            let owner_id = self.source.as_ref().map(|s| s.id());
-            let _ = PrimedTntEntity::spawn(self.world, center, short_fuse, owner_id);
+            let igniter_id = self.source.as_ref().and_then(|source| {
+                if let Some(tnt) = source.downcast_ref::<PrimedTntEntity>() {
+                    tnt.owner_id()
+                } else {
+                    Some(source.id())
+                }
+            });
+            let _ = PrimedTntEntity::spawn(self.world, center, short_fuse, igniter_id);
         }
 
         // Destroy non-TNT blocks
@@ -414,5 +440,18 @@ mod tests {
 
         let exposure = get_exposure(DVec3::new(2.0, 64.0, 0.0), &pig, &world);
         assert!((exposure - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn explosion_triggers_tnt_block_chain_reaction() {
+        init_vanilla_registry();
+        let world = crate::test_support::fresh_test_world("explosion_tnt_chain");
+        let tnt_pos = BlockPos::new(0, 64, 0);
+        world.set_block(tnt_pos, vanilla_blocks::TNT.default_state(), UpdateFlags::UPDATE_ALL);
+
+        let explosion = Explosion::new(&world, DVec3::new(0.5, 64.5, 0.5), 4.0);
+        explosion.explode();
+
+        assert!(world.get_block_state(tnt_pos).is_air());
     }
 }
