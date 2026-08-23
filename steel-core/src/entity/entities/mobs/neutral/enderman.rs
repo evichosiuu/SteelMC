@@ -89,7 +89,9 @@ impl EnderManEntity {
             target_selector.add_goal(1, HurtByTargetGoal::new());
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new_for_players(true, |_target, _world| true),
+                NearestAttackableTargetGoal::new_for_players(true, |target, _world| {
+                    target.can_be_seen_as_enemy()
+                }),
             );
             target_selector.add_goal(
                 3,
