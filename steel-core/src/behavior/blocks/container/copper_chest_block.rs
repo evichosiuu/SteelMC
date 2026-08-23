@@ -5,10 +5,11 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, ChestType, Direction, EnumProperty,
 };
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{sound_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
@@ -238,6 +239,28 @@ impl BlockBehavior for CopperChestBlock {
             pos,
             state,
         ))
+    }
+
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        if param_a == 1 {
+            let sound = if param_b > 0 {
+                &sound_events::BLOCK_CHEST_OPEN
+            } else {
+                &sound_events::BLOCK_CHEST_CLOSE
+            };
+            let pitch = 0.9 + rand::random::<f32>() * 0.1;
+            world.play_sound(sound, SoundSource::Blocks, pos, 0.5, pitch, None);
+            true
+        } else {
+            false
+        }
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -476,6 +499,28 @@ impl BlockBehavior for WeatheringCopperChestBlock {
             pos,
             state,
         ))
+    }
+
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        if param_a == 1 {
+            let sound = if param_b > 0 {
+                &sound_events::BLOCK_CHEST_OPEN
+            } else {
+                &sound_events::BLOCK_CHEST_CLOSE
+            };
+            let pitch = 0.9 + rand::random::<f32>() * 0.1;
+            world.play_sound(sound, SoundSource::Blocks, pos, 0.5, pitch, None);
+            true
+        } else {
+            false
+        }
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

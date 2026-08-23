@@ -96,6 +96,19 @@ impl MenuKind for ChestKind {
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.container.still_valid(player)
     }
+
+    fn on_open(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        player: &Player,
+    ) {
+        self.container.start_open(player);
+    }
+
+    fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
+        self.container.stop_open(player);
+    }
 }
 
 /// Per-menu double chest state: backing containers for validity check.
@@ -116,6 +129,21 @@ unsafe impl steel_utils::DowncastType for DoubleChestKind {
 impl MenuKind for DoubleChestKind {
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.first.still_valid(player) && self.second.still_valid(player)
+    }
+
+    fn on_open(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        player: &Player,
+    ) {
+        self.first.start_open(player);
+        self.second.start_open(player);
+    }
+
+    fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
+        self.first.stop_open(player);
+        self.second.stop_open(player);
     }
 }
 
