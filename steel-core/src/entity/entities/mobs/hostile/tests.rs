@@ -7,7 +7,12 @@ mod tests {
     use steel_utils::types::Difficulty;
     use steel_utils::Downcast;
 
-    use crate::entity::entities::mobs::hostile::{SkeletonEntity, ZombieEntity};
+    use crate::entity::entities::mobs::bosses::WitherBossEntity;
+    use crate::entity::entities::mobs::hostile::{
+        BlazeEntity, SkeletonEntity, WardenEntity, ZombieEntity,
+    };
+    use crate::entity::entities::mobs::neutral::{BeeEntity, WolfEntity};
+    use crate::entity::entities::mobs::passive::AllayEntity;
     use crate::entity::{Entity, EntitySpawnReason, LivingEntity, Mob};
     use crate::inventory::equipment::EquipmentSlot;
     use crate::test_support::fresh_test_world;
@@ -108,5 +113,29 @@ mod tests {
         }
 
         assert!(found_enchanted, "skeleton finalize_spawn on hard difficulty should have a chance to produce an enchanted bow");
+    }
+
+    #[test]
+    fn test_new_mobs_downcasting_and_ai_goals() {
+        init_vanilla_registry();
+
+        let blaze = BlazeEntity::new(&vanilla_entities::BLAZE, 10, DVec3::ZERO, Weak::new());
+        assert!((&blaze as &dyn Entity).downcast_ref::<BlazeEntity>().is_some());
+        assert!(blaze.mob_base().goal_selector().lock().available_goal_count() > 0);
+
+        let wither = WitherBossEntity::new(&vanilla_entities::WITHER, 11, DVec3::ZERO, Weak::new());
+        assert!((&wither as &dyn Entity).downcast_ref::<WitherBossEntity>().is_some());
+
+        let wolf = WolfEntity::new(&vanilla_entities::WOLF, 12, DVec3::ZERO, Weak::new());
+        assert!((&wolf as &dyn Entity).downcast_ref::<WolfEntity>().is_some());
+
+        let bee = BeeEntity::new(&vanilla_entities::BEE, 13, DVec3::ZERO, Weak::new());
+        assert!((&bee as &dyn Entity).downcast_ref::<BeeEntity>().is_some());
+
+        let allay = AllayEntity::new(&vanilla_entities::ALLAY, 14, DVec3::ZERO, Weak::new());
+        assert!((&allay as &dyn Entity).downcast_ref::<AllayEntity>().is_some());
+
+        let warden = WardenEntity::new(&vanilla_entities::WARDEN, 15, DVec3::ZERO, Weak::new());
+        assert!((&warden as &dyn Entity).downcast_ref::<WardenEntity>().is_some());
     }
 }
