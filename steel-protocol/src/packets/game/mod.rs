@@ -129,7 +129,7 @@ pub use c_level_event::CLevelEvent;
 pub use c_level_particles::CLevelParticles;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
-pub use c_merchant_offers::{CMerchantOffers, MerchantOffer};
+pub use c_merchant_offers::{CMerchantOffers, ItemCost, MerchantOffer};
 pub use c_move_entity::{
     CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };

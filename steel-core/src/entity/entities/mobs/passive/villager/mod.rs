@@ -20,6 +20,7 @@ use steel_registry::{
     REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_attributes,
     vanilla_villager_professions, vanilla_villager_types,
 };
+use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast, DowncastType, DowncastTypeKey, Identifier};
@@ -107,9 +108,9 @@ impl VillagerEntity {
         {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            goal_selector.add_goal(1, PanicGoal::new(2.0));
-            goal_selector.add_goal(2, MoveToBlockGoal::new(1.0, 16, |_level, _pos| false));
-            goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
+            goal_selector.add_goal(1, PanicGoal::new(0.7));
+            goal_selector.add_goal(2, MoveToBlockGoal::new(0.6, 16, |_level, _pos| false));
+            goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(0.6));
             goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
             goal_selector.add_goal(7, RandomLookAroundGoal::new());
         }
@@ -181,6 +182,7 @@ impl VillagerEntity {
             }
 
             self.play_sound(&sound_events::ENTITY_VILLAGER_YES, 1.0, 1.0);
+            self.broadcast_entity_event(EntityStatus::VillagerHappy);
         }
     }
 
@@ -313,6 +315,7 @@ impl VillagerEntity {
                         *self.offers.lock() = initial_trades;
 
                         self.play_sound(&sound_events::ENTITY_VILLAGER_YES, 1.0, 1.0);
+                        self.broadcast_entity_event(EntityStatus::VillagerHappy);
                         break 'search;
                     }
                 }
@@ -589,6 +592,7 @@ impl Mob for VillagerEntity {
                     && let Some(villager) = villager_entity.downcast_ref::<VillagerEntity>()
                 {
                     villager.add_villager_xp(trade_xp);
+                    villager.broadcast_entity_event(EntityStatus::VillagerHappy);
                 }
             }
 
