@@ -12,8 +12,11 @@ use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use super::abstract_minecart::AbstractMinecart;
+use steel_registry::vanilla_items;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    DamageSource, Entity, EntityBase, EntityBaseLoad,
+    reset_forward_direction_of_relative_portal_position,
 };
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
@@ -91,6 +94,18 @@ impl Entity for SpawnerMinecartEntity {
 
     fn dimension_changing_delay(&self) -> i32 {
         10
+    }
+
+    fn is_on_rails(&self) -> bool {
+        AbstractMinecart::is_on_rails(self)
+    }
+
+    fn tick(&self) {
+        AbstractMinecart::tick_minecart(self, None, None, None);
+    }
+
+    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
+        AbstractMinecart::hurt_minecart(self, world, source, &vanilla_items::MINECART)
     }
 
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {

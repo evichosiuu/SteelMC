@@ -12,9 +12,16 @@ use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use super::abstract_minecart::AbstractMinecart;
+use steel_registry::vanilla_items;
+use steel_utils::types::InteractionHand;
+
+use crate::behavior::InteractionResult;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    DamageSource, Entity, EntityBase, EntityBaseLoad,
+    reset_forward_direction_of_relative_portal_position,
 };
+use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
 
@@ -97,6 +104,25 @@ impl Entity for TntMinecartEntity {
         10
     }
 
+    fn is_on_rails(&self) -> bool {
+        AbstractMinecart::is_on_rails(self)
+    }
+
+    fn tick(&self) {
+        let state = self.state.lock();
+        let mut fuse = state.fuse;
+        drop(state);
+
+        AbstractMinecart::tick_minecart(self, None, None, Some(&mut fuse));
+
+        let mut state = self.state.lock();
+        state.fuse = fuse;
+    }
+
+    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
+        AbstractMinecart::hurt_minecart(self, world, source, &vanilla_items::TNT_MINECART)
+    }
+
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
             portal_area,
@@ -121,5 +147,33 @@ impl Entity for TntMinecartEntity {
         if let Some(fuse) = nbt.int("TNTFuse") {
             state.fuse = fuse;
         }
+    }
+
+    fn interact(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        let item_stack = {
+            let inventory = player.inventory.lock();
+            let item = inventory.get_item_in_hand(hand);
+            item.copy_with_count(item.count())
+        };
+
+        if item_stack.is(&vanilla_items::FLINT_AND_STEEL) || item_stack.is(&vanilla_items::FIRE_CHARGE) {
+            let mut state = self.state.lock();
+            if state.fuse < 0 {
+                state.fuse = 80;
+                if item_stack.is(&vanilla_items::FLINT_AND_STEEL) {
+                    player.inventory.lock().hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+                } else if item_stack.is(&vanilla_items::FIRE_CHARGE) && !player.has_infinite_materials() {
+                    player.inventory.lock().shrink_item_in_hand(hand, 1);
+                }
+                return InteractionResult::Success;
+            }
+        }
+
+        InteractionResult::Pass
     }
 }

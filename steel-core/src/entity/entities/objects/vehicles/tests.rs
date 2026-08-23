@@ -11,7 +11,9 @@ use super::*;
 use crate::behavior::init_behaviors;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::{Entity as _, InsideBlockEffectCollector, SharedEntity, init_entities};
+use crate::inventory::container::Container as _;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 
 #[test]
 fn all_minecart_entities_have_vanilla_abstract_minecart_flags() {
@@ -236,4 +238,149 @@ fn detector_rail_powers_for_all_minecart_types() {
         minecart.set_removed(crate::entity::RemovalReason::Discarded);
         detector_behavior.tick(powered_state, &world, pos);
     }
+}
+
+#[test]
+fn player_mounts_rideable_minecart_on_interact() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_mount_interact");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            500,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create rideable minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "rider", 501).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+
+    let player_ref = player.as_player().unwrap();
+    let result = minecart.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+    assert!(minecart.is_vehicle());
+    assert_eq!(player.vehicle().map(|v| v.id()), Some(500));
+}
+
+#[test]
+fn minecart_moves_along_rail_when_pushed() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_pushed_movement");
+    let chunk_pos = ChunkPos::new(0, 0);
+    insert_ready_full_chunk(&world, chunk_pos);
+
+    for x in 0..10 {
+        let rail_pos = BlockPos::new(x, 64, 1);
+        world.set_block(rail_pos.below(), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+        let state = vanilla_blocks::RAIL
+            .default_state()
+            .set_value(&steel_registry::blocks::properties::BlockStateProperties::RAIL_SHAPE, steel_registry::blocks::properties::RailShape::EastWest);
+        world.set_block(rail_pos, state, UpdateFlags::UPDATE_NONE);
+    }
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            600,
+            DVec3::new(1.5, 64.0625, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    assert!(minecart.is_on_rails());
+
+    // Give push impulse along +X
+    minecart.push_impulse(DVec3::new(0.2, 0.0, 0.0));
+    assert!(minecart.velocity().x > 0.0);
+
+    // Tick minecart
+    minecart.tick();
+
+    // Minecart position should have moved in +X direction
+    assert!(minecart.position().x > 1.5);
+}
+
+#[test]
+fn furnace_minecart_fuel_and_push_force() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("furnace_minecart_fuel");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    for x in 0..10 {
+        let rail_pos = BlockPos::new(x, 64, 1);
+        world.set_block(rail_pos.below(), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+        let state = vanilla_blocks::RAIL
+            .default_state()
+            .set_value(&steel_registry::blocks::properties::BlockStateProperties::RAIL_SHAPE, steel_registry::blocks::properties::RailShape::EastWest);
+        world.set_block(rail_pos, state, UpdateFlags::UPDATE_NONE);
+    }
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::FURNACE_MINECART,
+            700,
+            DVec3::new(1.5, 64.0625, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create furnace minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "stoker", 701).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+
+    let player_ref = player.as_player().unwrap();
+    let _ = player_ref.try_set_position(DVec3::new(0.5, 64.0, 1.5));
+    player_ref.inventory.lock().set_item(0, steel_registry::item_stack::ItemStack::new(&steel_registry::vanilla_items::COAL));
+
+    let result = minecart.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+
+    // Tick furnace minecart
+    let start_x = minecart.position().x;
+    minecart.tick();
+    assert!(minecart.position().x > start_x);
+}
+
+#[test]
+fn minecart_break_and_item_drop_on_hurt() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_hurt_break");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            800,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    let dmg = crate::entity::DamageSource::environment(&steel_registry::vanilla_damage_types::GENERIC);
+    let hurt_result = minecart.hurt(&world, &dmg, 10.0);
+    assert!(hurt_result);
+    assert!(minecart.is_removed());
+
+    // Check dropped item
+    let dropped_items = world.get_entities_in_aabb(&steel_utils::WorldAabb::new(1.0, 63.0, 1.0, 2.0, 65.0, 2.0));
+    assert_eq!(dropped_items.len(), 1);
+    assert_eq!(dropped_items[0].entity_type(), &vanilla_entities::ITEM);
 }
