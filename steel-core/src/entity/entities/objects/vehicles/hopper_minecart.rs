@@ -10,6 +10,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
@@ -18,7 +19,7 @@ use steel_utils::{DowncastType, DowncastTypeKey, Identifier, translations};
 use text_components::TextComponent;
 
 use super::abstract_minecart::AbstractMinecart;
-use steel_registry::vanilla_items;
+use crate::behavior::InteractionResult;
 use crate::entity::{
     DamageSource, Entity, EntityBase, EntityBaseLoad,
     reset_forward_direction_of_relative_portal_position,
@@ -143,6 +144,23 @@ impl Entity for HopperMinecartEntity {
 
     fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
         AbstractMinecart::hurt_minecart(self, world, source, &vanilla_items::HOPPER_MINECART)
+    }
+
+    fn interact(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        let inventory = player.inventory.clone();
+        let container_ref = ContainerRef::from(self.container.clone());
+
+        player.open_menu(
+            TextComponent::translated(translations::CONTAINER_HOPPER.msg()),
+            move |context| hopper(inventory, context.container_id, container_ref),
+        );
+
+        InteractionResult::Success
     }
 
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {

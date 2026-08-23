@@ -16,10 +16,11 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
-    ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
-    SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, BrewingStandBlockEntity, BrushableBlockEntity,
+    ChestBlockEntity, ChiseledBookShelfBlockEntity, ComparatorBlockEntity, CrafterBlockEntity,
+    DaylightDetectorBlockEntity, DispenserBlockEntity, EndGatewayBlockEntity,
+    EndPortalBlockEntity, FurnaceBlockEntity, HopperBlockEntity, PistonMovingBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, ShulkerBoxBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -221,6 +222,59 @@ pub fn init_block_entities() {
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
+        });
+
+        // Register chest block entity factories
+        registry.register(&vanilla_block_entity_types::CHEST, |level, pos, state| {
+            Arc::new(ChestBlockEntity::new(level, pos, state))
+        });
+        registry.register(
+            &vanilla_block_entity_types::TRAPPED_CHEST,
+            |level, pos, state| Arc::new(ChestBlockEntity::new_trapped(level, pos, state)),
+        );
+
+        // Register shulker box block entity factory
+        registry.register(
+            &vanilla_block_entity_types::SHULKER_BOX,
+            |level, pos, state| Arc::new(ShulkerBoxBlockEntity::new(level, pos, state)),
+        );
+
+        // Register dispenser and dropper block entity factories
+        registry.register(
+            &vanilla_block_entity_types::DISPENSER,
+            |level, pos, state| Arc::new(DispenserBlockEntity::new(level, pos, state)),
+        );
+        registry.register(
+            &vanilla_block_entity_types::DROPPER,
+            |level, pos, state| Arc::new(DispenserBlockEntity::new_dropper(level, pos, state)),
+        );
+
+        // Register hopper block entity factory
+        registry.register(&vanilla_block_entity_types::HOPPER, |level, pos, state| {
+            Arc::new(HopperBlockEntity::new(level, pos, state))
+        });
+
+        // Register furnace block entity factories
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
+        });
+        registry.register(
+            &vanilla_block_entity_types::BLAST_FURNACE,
+            |level, pos, state| Arc::new(FurnaceBlockEntity::new_blast(level, pos, state)),
+        );
+        registry.register(&vanilla_block_entity_types::SMOKER, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new_smoker(level, pos, state))
+        });
+
+        // Register brewing stand block entity factory
+        registry.register(
+            &vanilla_block_entity_types::BREWING_STAND,
+            |level, pos, state| Arc::new(BrewingStandBlockEntity::new(level, pos, state)),
+        );
+
+        // Register crafter block entity factory
+        registry.register(&vanilla_block_entity_types::CRAFTER, |level, pos, state| {
+            Arc::new(CrafterBlockEntity::new(level, pos, state))
         });
 
         registry.register(
