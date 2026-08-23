@@ -168,6 +168,30 @@ impl ContainerRef {
             .is_none_or(|owner| owner.block_entity.is_valid_container_for(player))
     }
 
+    /// Notifies the owning block entity (if any) that a player opened a menu for this container.
+    pub fn start_open(&self, player: &Player) {
+        if let Some(owner) = &self.owner {
+            if let Some(world) = owner.block_entity.level() {
+                let pos = owner.block_entity.pos();
+                if let Some(be) = world.get_block_entity(pos) {
+                    be.start_open(player);
+                }
+            }
+        }
+    }
+
+    /// Notifies the owning block entity (if any) that a player closed a menu for this container.
+    pub fn stop_open(&self, player: &Player) {
+        if let Some(owner) = &self.owner {
+            if let Some(world) = owner.block_entity.level() {
+                let pos = owner.block_entity.pos();
+                if let Some(be) = world.get_block_entity(pos) {
+                    be.stop_open(player);
+                }
+            }
+        }
+    }
+
     /// Locks this container and returns a guard.
     fn lock(&self) -> LockedContainer {
         LockedContainer(SyncMutex::lock_arc(&self.source))

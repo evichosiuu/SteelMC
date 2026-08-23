@@ -200,7 +200,7 @@ impl BlockEntityBase {
     }
 
     #[must_use]
-    const fn pos(&self) -> BlockPos {
+    pub(crate) const fn pos(&self) -> BlockPos {
         self.pos
     }
 
@@ -268,7 +268,7 @@ impl BlockEntityBase {
     }
 
     #[must_use]
-    fn level(&self) -> Option<Arc<World>> {
+    pub(crate) fn level(&self) -> Option<Arc<World>> {
         self.level.upgrade()
     }
 
@@ -368,6 +368,20 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn trigger_event(&self, _param_a: i32, _param_b: i32) -> bool {
         false
     }
+
+    /// Called when a player opens a menu targeting this block entity.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn start_open(&self, player: &Player) {}
+
+    /// Called when a player closes a menu targeting this block entity.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn stop_open(&self, player: &Player) {}
 
     /// Called before the block entity is removed to handle side effects.
     ///

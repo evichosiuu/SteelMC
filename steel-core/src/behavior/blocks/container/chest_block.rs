@@ -5,10 +5,11 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, ChestType, Direction, EnumProperty,
 };
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{sound_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
@@ -245,6 +246,28 @@ impl BlockBehavior for ChestBlock {
             pos,
             state,
         ))
+    }
+
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        if param_a == 1 {
+            let sound = if param_b > 0 {
+                &sound_events::BLOCK_CHEST_OPEN
+            } else {
+                &sound_events::BLOCK_CHEST_CLOSE
+            };
+            let pitch = 0.9 + rand::random::<f32>() * 0.1;
+            world.play_sound(sound, SoundSource::Blocks, pos, 0.5, pitch, None);
+            true
+        } else {
+            false
+        }
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -485,6 +508,28 @@ impl BlockBehavior for TrappedChestBlock {
         ))
     }
 
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        if param_a == 1 {
+            let sound = if param_b > 0 {
+                &sound_events::BLOCK_CHEST_OPEN
+            } else {
+                &sound_events::BLOCK_CHEST_CLOSE
+            };
+            let pitch = 0.9 + rand::random::<f32>() * 0.1;
+            world.play_sound(sound, SoundSource::Blocks, pos, 0.5, pitch, None);
+            true
+        } else {
+            false
+        }
+    }
+
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
         true
     }
@@ -524,6 +569,146 @@ mod tests {
     use crate::behavior::{PlacementOrientation, init_behaviors};
     use crate::block_entity::{BlockEntity, entities::ChestBlockEntity, init_block_entities};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    use crate::test_support::TestPlayerBuilder;
+
+    fn test_player(world: Arc<World>) -> Arc<Player> {
+        let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+    }
+
+    #[test]
+    fn chest_opening_and_closing_runs_block_events() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+
+        let world = fresh_test_world("chest_open_close_test");
+        let pos = BlockPos::new(1, 64, 1);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let chest_state = vanilla_blocks::CHEST.default_state();
+        assert!(world.set_block(pos, chest_state, UpdateFlags::UPDATE_ALL));
+
+        let block_entity = world
+            .get_block_entity(pos)
+            .expect("Chest should have a block entity");
+        let container_ref = ContainerRef::from_block_entity(Arc::clone(&block_entity))
+            .expect("Chest should expose container_ref");
+
+        let player = test_player(Arc::clone(&world));
+
+        // Open chest
+        container_ref.start_open(&player);
+        world.run_block_events();
+
+        // Close chest
+        container_ref.stop_open(&player);
+        world.run_block_events();
+    }
+
+    #[test]
+    fn double_chest_opening_and_closing_runs_block_events() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+
+        let world = fresh_test_world("double_chest_open_close_test");
+        let pos_left = BlockPos::new(2, 64, 2);
+        let pos_right = BlockPos::new(3, 64, 2);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos_left));
+
+        let facing = Direction::South;
+        let left_state = vanilla_blocks::CHEST
+            .default_state()
+            .set_value(FACING, facing)
+            .set_value(CHEST_TYPE, ChestType::Left);
+        let right_state = vanilla_blocks::CHEST
+            .default_state()
+            .set_value(FACING, facing)
+            .set_value(CHEST_TYPE, ChestType::Right);
+
+        assert!(world.set_block(pos_left, left_state, UpdateFlags::UPDATE_ALL));
+        assert!(world.set_block(pos_right, right_state, UpdateFlags::UPDATE_ALL));
+
+        let left_entity = world.get_block_entity(pos_left).unwrap();
+        let left_ref = ContainerRef::from_block_entity(left_entity).unwrap();
+
+        let player = test_player(Arc::clone(&world));
+
+        left_ref.start_open(&player);
+        world.run_block_events();
+
+        left_ref.stop_open(&player);
+        world.run_block_events();
+    }
+
+    #[test]
+    fn barrel_opening_and_closing_updates_open_property() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+
+        let world = fresh_test_world("barrel_open_close_test");
+        let pos = BlockPos::new(5, 64, 5);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let barrel_state = vanilla_blocks::BARREL
+            .default_state()
+            .set_value(&BlockStateProperties::OPEN, false);
+        assert!(world.set_block(pos, barrel_state, UpdateFlags::UPDATE_ALL));
+
+        let block_entity = world.get_block_entity(pos).unwrap();
+        let container_ref = ContainerRef::from_block_entity(block_entity).unwrap();
+        let player = test_player(Arc::clone(&world));
+
+        container_ref.start_open(&player);
+        assert!(
+            world.get_block_state(pos).get_value(&BlockStateProperties::OPEN)
+        );
+
+        container_ref.stop_open(&player);
+        assert!(
+            !world.get_block_state(pos).get_value(&BlockStateProperties::OPEN)
+        );
+    }
+
+    #[test]
+    fn ender_chest_and_shulker_box_open_close_run_block_events() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+
+        let world = fresh_test_world("ender_shulker_open_close_test");
+        let ec_pos = BlockPos::new(10, 64, 10);
+        let shulker_pos = BlockPos::new(12, 64, 10);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(ec_pos));
+
+        let ec_state = vanilla_blocks::ENDER_CHEST.default_state();
+        let shulker_state = vanilla_blocks::SHULKER_BOX.default_state();
+
+        assert!(world.set_block(ec_pos, ec_state, UpdateFlags::UPDATE_ALL));
+        assert!(world.set_block(shulker_pos, shulker_state, UpdateFlags::UPDATE_ALL));
+
+        let ec_be = world.get_block_entity(ec_pos).unwrap();
+        let shulker_be = world.get_block_entity(shulker_pos).unwrap();
+        let shulker_ref = ContainerRef::from_block_entity(shulker_be).unwrap();
+
+        let player = test_player(Arc::clone(&world));
+
+        ec_be.start_open(&player);
+        world.run_block_events();
+
+        ec_be.stop_open(&player);
+        world.run_block_events();
+
+        shulker_ref.start_open(&player);
+        world.run_block_events();
+
+        shulker_ref.stop_open(&player);
+        world.run_block_events();
+    }
 
     #[test]
     fn chest_block_entity_creation_and_container() {
