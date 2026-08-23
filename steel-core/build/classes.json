@@ -10970,102 +10970,102 @@
     {
       "name": "oak_boat",
       "class": "BoatItem",
-      "entity_type": "oak_boat"
+      "type": "oak_boat"
     },
     {
       "name": "oak_chest_boat",
       "class": "BoatItem",
-      "entity_type": "oak_chest_boat"
+      "type": "oak_chest_boat"
     },
     {
       "name": "spruce_boat",
       "class": "BoatItem",
-      "entity_type": "spruce_boat"
+      "type": "spruce_boat"
     },
     {
       "name": "spruce_chest_boat",
       "class": "BoatItem",
-      "entity_type": "spruce_chest_boat"
+      "type": "spruce_chest_boat"
     },
     {
       "name": "birch_boat",
       "class": "BoatItem",
-      "entity_type": "birch_boat"
+      "type": "birch_boat"
     },
     {
       "name": "birch_chest_boat",
       "class": "BoatItem",
-      "entity_type": "birch_chest_boat"
+      "type": "birch_chest_boat"
     },
     {
       "name": "jungle_boat",
       "class": "BoatItem",
-      "entity_type": "jungle_boat"
+      "type": "jungle_boat"
     },
     {
       "name": "jungle_chest_boat",
       "class": "BoatItem",
-      "entity_type": "jungle_chest_boat"
+      "type": "jungle_chest_boat"
     },
     {
       "name": "acacia_boat",
       "class": "BoatItem",
-      "entity_type": "acacia_boat"
+      "type": "acacia_boat"
     },
     {
       "name": "acacia_chest_boat",
       "class": "BoatItem",
-      "entity_type": "acacia_chest_boat"
+      "type": "acacia_chest_boat"
     },
     {
       "name": "cherry_boat",
       "class": "BoatItem",
-      "entity_type": "cherry_boat"
+      "type": "cherry_boat"
     },
     {
       "name": "cherry_chest_boat",
       "class": "BoatItem",
-      "entity_type": "cherry_chest_boat"
+      "type": "cherry_chest_boat"
     },
     {
       "name": "dark_oak_boat",
       "class": "BoatItem",
-      "entity_type": "dark_oak_boat"
+      "type": "dark_oak_boat"
     },
     {
       "name": "dark_oak_chest_boat",
       "class": "BoatItem",
-      "entity_type": "dark_oak_chest_boat"
+      "type": "dark_oak_chest_boat"
     },
     {
       "name": "pale_oak_boat",
       "class": "BoatItem",
-      "entity_type": "pale_oak_boat"
+      "type": "pale_oak_boat"
     },
     {
       "name": "pale_oak_chest_boat",
       "class": "BoatItem",
-      "entity_type": "pale_oak_chest_boat"
+      "type": "pale_oak_chest_boat"
     },
     {
       "name": "mangrove_boat",
       "class": "BoatItem",
-      "entity_type": "mangrove_boat"
+      "type": "mangrove_boat"
     },
     {
       "name": "mangrove_chest_boat",
       "class": "BoatItem",
-      "entity_type": "mangrove_chest_boat"
+      "type": "mangrove_chest_boat"
     },
     {
       "name": "bamboo_raft",
       "class": "BoatItem",
-      "entity_type": "bamboo_raft"
+      "type": "bamboo_raft"
     },
     {
       "name": "bamboo_chest_raft",
       "class": "BoatItem",
-      "entity_type": "bamboo_chest_raft"
+      "type": "bamboo_chest_raft"
     },
     {
       "name": "structure_block",
