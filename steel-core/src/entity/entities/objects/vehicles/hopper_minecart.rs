@@ -4,21 +4,32 @@ use std::str::FromStr;
 use std::sync::Weak;
 
 use glam::DVec3;
+use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_utils::Identifier;
+use steel_registry::item_stack::ItemStack;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
-use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::locks::{IntoShared, Shared, SyncMutex};
+use steel_utils::types::InteractionHand;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier, translations};
+use text_components::TextComponent;
 
+use crate::behavior::InteractionResult;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
 };
+use crate::inventory::container::{Container, SimpleContainer};
+use crate::inventory::lock::ContainerRef;
+use crate::inventory::menu::kinds::hopper;
+use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
+
+/// Number of slots in a hopper minecart (5).
+pub const HOPPER_MINECART_SLOTS: usize = 5;
 
 /// Hopper minecart entity.
 #[entity_behavior(class = "MinecartHopper")]
@@ -26,6 +37,7 @@ pub struct HopperMinecartEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     state: SyncMutex<HopperMinecartState>,
+    container: Shared<SimpleContainer>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `HopperMinecartEntity`.
@@ -62,6 +74,7 @@ impl HopperMinecartEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             state: SyncMutex::new(HopperMinecartState::new(true)),
+            container: SimpleContainer::new(HOPPER_MINECART_SLOTS).into_shared(),
         }
     }
 
@@ -72,6 +85,7 @@ impl HopperMinecartEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             state: SyncMutex::new(HopperMinecartState::new(false)),
+            container: SimpleContainer::new(HOPPER_MINECART_SLOTS).into_shared(),
         }
     }
 
@@ -117,6 +131,23 @@ impl Entity for HopperMinecartEntity {
         10
     }
 
+    fn interact_entity(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        let inventory = player.inventory.clone();
+        let container_ref = ContainerRef::from(self.container.clone());
+
+        player.open_menu(
+            TextComponent::translated(translations::CONTAINER_HOPPER.msg()),
+            move |context| hopper(inventory, context.container_id, container_ref),
+        );
+
+        InteractionResult::Success
+    }
+
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
             portal_area,
@@ -139,6 +170,18 @@ impl Entity for HopperMinecartEntity {
                 nbt.insert("LootTableSeed", NbtTag::Long(state.loot_table_seed));
             }
         }
+
+        let container = self.container.lock();
+        let mut items: Vec<NbtCompound> = Vec::new();
+        for (slot, item) in container.items().iter().enumerate() {
+            if !item.is_empty() {
+                if let NbtTag::Compound(mut item_nbt) = item.clone().to_nbt_tag() {
+                    item_nbt.insert("Slot", slot as i8);
+                    items.push(item_nbt);
+                }
+            }
+        }
+        nbt.insert("Items", NbtList::Compound(items));
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -157,5 +200,22 @@ impl Entity for HopperMinecartEntity {
         }
         state.loot_table = loot_table;
         state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+
+        let mut container = self.container.lock();
+        container.clear_content();
+        if let Some(items_list) = nbt.list("Items")
+            && let Some(compounds) = items_list.compounds()
+        {
+            for compound in compounds {
+                if let Some(slot) = compound.byte("Slot") {
+                    let slot = slot as usize;
+                    if slot < HOPPER_MINECART_SLOTS {
+                        if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
+                            container.set_item(slot, item);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

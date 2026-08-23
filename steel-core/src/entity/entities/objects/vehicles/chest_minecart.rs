@@ -1,38 +1,46 @@
-//! Chest minecart state needed by structure generation and persistence.
+//! Chest minecart implementation.
 
 use std::str::FromStr;
 use std::sync::Weak;
 
 use glam::DVec3;
+use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ChestMinecartEntityData;
-use steel_utils::Identifier;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
-use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::locks::{IntoShared, Shared, SyncMutex};
+use steel_utils::types::InteractionHand;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier, translations};
+use text_components::TextComponent;
 
+use crate::behavior::InteractionResult;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData,
     reset_forward_direction_of_relative_portal_position,
 };
+use crate::inventory::container::{Container, SimpleContainer};
+use crate::inventory::lock::ContainerRef;
+use crate::inventory::menu::kinds::chest;
+use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
 
-/// Chest minecart entity state used by mineshaft generation.
-///
-/// Steel does not yet implement minecart movement or container interaction, so this
-/// entity currently preserves the vanilla placement and loot-table state that
-/// structure generation creates.
+/// Number of slots in a chest minecart (27).
+pub const CHEST_MINECART_SLOTS: usize = 27;
+
+/// Chest minecart entity.
 #[entity_behavior(class = "MinecartChest")]
 pub struct ChestMinecartEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     state: SyncMutex<ChestMinecartState>,
     entity_data: SyncMutex<ChestMinecartEntityData>,
+    container: Shared<SimpleContainer>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ChestMinecartEntity`.
@@ -66,6 +74,7 @@ impl ChestMinecartEntity {
             entity_type,
             state: SyncMutex::new(ChestMinecartState::new(true)),
             entity_data: SyncMutex::new(ChestMinecartEntityData::new()),
+            container: SimpleContainer::new(CHEST_MINECART_SLOTS).into_shared(),
         }
     }
 
@@ -77,6 +86,7 @@ impl ChestMinecartEntity {
             entity_type,
             state: SyncMutex::new(ChestMinecartState::new(false)),
             entity_data: SyncMutex::new(ChestMinecartEntityData::new()),
+            container: SimpleContainer::new(CHEST_MINECART_SLOTS).into_shared(),
         }
     }
 
@@ -121,6 +131,23 @@ impl Entity for ChestMinecartEntity {
         10
     }
 
+    fn interact_entity(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        let inventory = player.inventory.clone();
+        let container_ref = ContainerRef::from(self.container.clone());
+
+        player.open_menu(
+            TextComponent::translated(translations::ENTITY_MINECRAFT_CHEST_MINECART.msg()),
+            move |context| chest(inventory, context.container_id, container_ref, 3),
+        );
+
+        InteractionResult::Success
+    }
+
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
             portal_area,
@@ -141,6 +168,18 @@ impl Entity for ChestMinecartEntity {
                 nbt.insert("LootTableSeed", NbtTag::Long(state.loot_table_seed));
             }
         }
+
+        let container = self.container.lock();
+        let mut items: Vec<NbtCompound> = Vec::new();
+        for (slot, item) in container.items().iter().enumerate() {
+            if !item.is_empty() {
+                if let NbtTag::Compound(mut item_nbt) = item.clone().to_nbt_tag() {
+                    item_nbt.insert("Slot", slot as i8);
+                    items.push(item_nbt);
+                }
+            }
+        }
+        nbt.insert("Items", NbtList::Compound(items));
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -153,6 +192,23 @@ impl Entity for ChestMinecartEntity {
         }
         state.loot_table = loot_table;
         state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+
+        let mut container = self.container.lock();
+        container.clear_content();
+        if let Some(items_list) = nbt.list("Items")
+            && let Some(compounds) = items_list.compounds()
+        {
+            for compound in compounds {
+                if let Some(slot) = compound.byte("Slot") {
+                    let slot = slot as usize;
+                    if slot < CHEST_MINECART_SLOTS {
+                        if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
+                            container.set_item(slot, item);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
