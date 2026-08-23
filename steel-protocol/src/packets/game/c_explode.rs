@@ -25,7 +25,7 @@ pub struct CExplode {
 impl WriteTo for CExplode {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.center.write(writer)?;
-        self.knockback.map(LpVec3).write(writer)?;
+        LpVec3(self.knockback.unwrap_or(DVec3::ZERO)).write(writer)?;
         self.particle.write(writer)?;
         self.sound.write(writer)
     }
@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn explode_packet_encodes_knockback_as_optional_lpvec3() {
+    fn explode_packet_encodes_knockback_as_lpvec3() {
         init_vanilla_registry();
 
         let center = DVec3::new(0.0, 64.0, 0.0);
@@ -109,10 +109,9 @@ mod tests {
         packet_some.write(&mut buf_some).unwrap();
 
         // Position `center` is 3 * 8 = 24 bytes.
-        // `None` knockback writes 1 byte (`0x00`).
-        // `Some` knockback writes 1 byte (`0x01`) plus 6 bytes for the non-zero `LpVec3`.
+        // `None` knockback encodes zero LpVec3, which writes 1 byte (`0x00`).
+        // `Some` knockback writes non-zero `LpVec3` (6 bytes in this case).
         assert_eq!(buf_none[24], 0x00);
-        assert_eq!(buf_some[24], 0x01);
-        assert_eq!(buf_some.len(), buf_none.len() + 6);
+        assert_eq!(buf_some.len(), buf_none.len() + 5);
     }
 }

@@ -717,6 +717,19 @@ fn disabled_damage_game_rule_ignores_unrelated_damage() {
 }
 
 #[test]
+fn creative_player_is_invulnerable_to_explosions() {
+    init_vanilla_registry();
+    let world = Arc::clone(test_world());
+    let player = test_player(Arc::clone(&world));
+    player.abilities.lock().invulnerable = true;
+    let source = DamageSource::environment(&vanilla_damage_types::EXPLOSION);
+
+    assert!(LivingEntity::is_invulnerable_to(player.as_ref(), &world, &source));
+    assert!(!player.hurt(&world, &source, 20.0));
+    assert_eq!(player.get_health().to_bits(), 20.0_f32.to_bits());
+}
+
+#[test]
 fn hurt_uses_explicit_world_difficulty() {
     let attached_world = Arc::clone(test_world());
     let damage_world = hard_damage_test_world();
