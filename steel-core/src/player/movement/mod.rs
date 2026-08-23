@@ -869,7 +869,13 @@ impl Player {
         // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
         // lastActionTime = Util.getMillis(), preventing idle-kick. Add when idle-kick system is implemented.
 
-        self.set_crouching(input.shift());
+        if self.is_passenger() {
+            if input.shift() {
+                self.stop_riding();
+            }
+        } else {
+            self.set_crouching(input.shift());
+        }
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).

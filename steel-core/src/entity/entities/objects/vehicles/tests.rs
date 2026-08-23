@@ -434,3 +434,108 @@ fn minecart_break_and_item_drop_on_hurt() {
     assert_eq!(dropped_items.len(), 1);
     assert_eq!(dropped_items[0].entity_type(), &vanilla_entities::ITEM);
 }
+
+#[test]
+fn minecart_curve_movement_preserves_smooth_velocity_components() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_curve_smooth");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    // Place a SouthEast rail at (0, 64, 0)
+    let pos = BlockPos::new(0, 64, 0);
+    world.set_block(pos.below(), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+    let state = vanilla_blocks::RAIL
+        .default_state()
+        .set_value(
+            &steel_registry::blocks::properties::BlockStateProperties::RAIL_SHAPE,
+            steel_registry::blocks::properties::RailShape::SouthEast,
+        );
+    world.set_block(pos, state, UpdateFlags::UPDATE_NONE);
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            950,
+            DVec3::new(0.5, 64.0625, 0.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    // Push minecart in +X
+    minecart.push_impulse(DVec3::new(0.2, 0.0, 0.0));
+    minecart.tick();
+
+    let vel = minecart.velocity();
+    // On SouthEast curve (+Z to +X), both X and Z velocity components must be non-zero (smooth curve motion)
+    assert!(vel.x > 0.0, "vel.x should be positive on curve, got {}", vel.x);
+    assert!(vel.z < 0.0, "vel.z should be negative on curve, got {}", vel.z);
+    assert!(
+        minecart.position().x > 0.5,
+        "x position should advance smoothly, got {}",
+        minecart.position().x
+    );
+    assert!(
+        minecart.position().z < 0.75,
+        "z position should advance smoothly towards 0.5, got {}",
+        minecart.position().z
+    );
+}
+
+#[test]
+fn player_dismounts_minecart_on_shift_input() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_dismount_shift");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    // Place stone floor for safe dismount
+    for x in 0..3 {
+        for z in 0..3 {
+            world.set_block(
+                BlockPos::new(x, 63, z),
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            );
+        }
+    }
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            1000,
+            DVec3::new(1.5, 64.0, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create rideable minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    let player: SharedEntity = crate::test_support::TestPlayerBuilder::new(world.clone(), "rider", 1001).build();
+    world.try_add_entity(Arc::clone(&player)).unwrap();
+
+    let player_ref = player.as_player().unwrap();
+    player_ref.set_client_loaded(true);
+
+    let result = minecart.interact(player_ref, steel_utils::types::InteractionHand::MainHand, DVec3::ZERO);
+    assert_eq!(result, crate::behavior::InteractionResult::Success);
+    assert!(player_ref.is_passenger());
+
+    // Send SPlayerInput with shift bit (0x20)
+    let packet = steel_protocol::packets::game::SPlayerInput { flags: 0x20 };
+    player_ref.handle_player_input(packet);
+
+    assert!(!player_ref.is_passenger(), "player should no longer be a passenger");
+    assert!(!minecart.is_vehicle(), "minecart should no longer have passengers");
+
+    // Verify player is placed at a safe location
+    let dismount_pos = player_ref.position();
+    assert!(
+        (dismount_pos - minecart.position()).length() > 0.1,
+        "player should be placed at dismount position relative to minecart"
+    );
+}

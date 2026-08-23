@@ -20,10 +20,6 @@ use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::world::World;
 
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "vanilla DismountHelper foundation; vehicle dismounts use this next"
-)]
 pub(crate) const fn offsets_for_direction(forward: steel_utils::Direction) -> [(i32, i32); 8] {
     let right = forward.rotate_y_clockwise();
     let left = right.opposite();
@@ -43,6 +39,36 @@ pub(crate) const fn offsets_for_direction(forward: steel_utils::Direction) -> [(
         (back_x, back_z),
         (forward_x, forward_z),
     ]
+}
+
+#[must_use]
+pub(crate) fn get_dismount_location(vehicle: &dyn Entity, passenger: &dyn Entity) -> DVec3 {
+    let Some(world) = vehicle.level() else {
+        return vehicle.position();
+    };
+
+    let vehicle_pos = vehicle.position();
+    let block_pos = BlockPos::containing(vehicle_pos.x, vehicle_pos.y, vehicle_pos.z);
+    let rotation = passenger.rotation();
+    let direction = steel_utils::Direction::from_yaw(rotation.0);
+    let offsets = offsets_for_direction(direction);
+
+    for (dx, dz) in offsets {
+        let candidate_pos = BlockPos::new(block_pos.x() + dx, block_pos.y(), block_pos.z() + dz);
+        if let Some(dismount_pos) = find_safe_dismount_location(&world, passenger, candidate_pos, true) {
+            return dismount_pos;
+        }
+    }
+
+    if let Some(dismount_pos) = find_safe_dismount_location(&world, passenger, block_pos, true) {
+        return dismount_pos;
+    }
+
+    DVec3::new(
+        vehicle_pos.x,
+        vehicle_pos.y + f64::from(vehicle.dimensions_for_pose(passenger.pose()).height),
+        vehicle_pos.z,
+    )
 }
 
 #[must_use]
