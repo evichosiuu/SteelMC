@@ -1,7 +1,7 @@
 //! Villager trade offers and trade generation.
 
 use simdnbt::{borrow::NbtCompound as BorrowedNbtCompound, owned::NbtCompound};
-use steel_protocol::packets::game::MerchantOffer;
+use steel_protocol::packets::game::{ItemCost, MerchantOffer};
 use steel_registry::{
     item_stack::ItemStack,
     vanilla_items,
@@ -98,9 +98,9 @@ impl TradeOffer {
     #[must_use]
     pub fn to_packet_offer(&self) -> MerchantOffer {
         MerchantOffer {
-            base_cost_a: self.get_cost_a(),
+            base_cost_a: ItemCost::from_item_stack(&self.get_cost_a()),
             result: self.result.clone(),
-            cost_b: self.get_cost_b(),
+            cost_b: self.get_cost_b().as_ref().map(ItemCost::from_item_stack),
             out_of_stock: self.is_out_of_stock(),
             uses: self.uses,
             max_uses: self.max_uses,
