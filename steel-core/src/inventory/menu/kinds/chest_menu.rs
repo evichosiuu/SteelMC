@@ -38,6 +38,29 @@ pub fn chest(
     builder.build(ChestKind { container })
 }
 
+/// Builds a double chest menu combining two 27-slot containers (6 rows of 9) plus player inventory.
+#[must_use]
+pub fn double_chest(
+    inventory: Shared<PlayerInventory>,
+    container_id: u8,
+    first: impl Into<ContainerRef>,
+    second: impl Into<ContainerRef>,
+) -> Menu {
+    let first = first.into();
+    let second = second.into();
+
+    let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X6, container_id);
+    let chest1 = builder.section(&first, 27);
+    let chest2 = builder.section(&second, 27);
+    let player = builder.player_inventory(&inventory);
+
+    let chest_all = [chest1, chest2];
+    builder.route(chest_all, player.all(), FillDirection::Backward);
+    builder.route(player.all(), chest_all, FillDirection::Forward);
+
+    builder.build(DoubleChestKind { first, second })
+}
+
 /// Menu type for a chest of `rows` rows.
 ///
 /// # Panics
@@ -72,6 +95,27 @@ impl MenuKind for ChestKind {
     /// Returns true if the backing container is still valid for the player.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.container.still_valid(player)
+    }
+}
+
+/// Per-menu double chest state: backing containers for validity check.
+pub struct DoubleChestKind {
+    /// The first container.
+    first: ContainerRef,
+    /// The second container.
+    second: ContainerRef,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
+// within the process.
+unsafe impl steel_utils::DowncastType for DoubleChestKind {
+    const TYPE_KEY: steel_utils::DowncastTypeKey =
+        steel_utils::DowncastTypeKey::new("steel:menu/double_chest");
+}
+
+impl MenuKind for DoubleChestKind {
+    fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
+        self.first.still_valid(player) && self.second.still_valid(player)
     }
 }
 

@@ -130,7 +130,8 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
 
-use crate::inventory::container::Container;
+use crate::inventory::container::{Container, SimpleContainer};
+use steel_utils::locks::IntoShared;
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
@@ -187,6 +188,9 @@ pub struct Player {
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: Shared<PlayerInventory>,
+
+    /// The player's ender chest inventory (27 slots).
+    pub ender_chest_inventory: Shared<SimpleContainer>,
 
     /// Logical inventory slots that must be resent directly to this player's client.
     inventory_sync: SyncMutex<PlayerInventorySyncState>,
@@ -509,6 +513,7 @@ impl Player {
             )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
+            ender_chest_inventory: SimpleContainer::new(27).into_shared(),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(inventory_menu(inventory)),
