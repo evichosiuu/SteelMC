@@ -94,12 +94,12 @@ impl WriteTo for MerchantOffer {
             false.write(writer)?;
         }
         self.out_of_stock.write(writer)?;
-        self.uses.write(writer)?;
-        self.max_uses.write(writer)?;
-        self.xp.write(writer)?;
-        self.special_price_diff.write(writer)?;
+        VarInt(self.uses).write(writer)?;
+        VarInt(self.max_uses).write(writer)?;
+        VarInt(self.xp).write(writer)?;
+        VarInt(self.special_price_diff).write(writer)?;
         self.price_multiplier.write(writer)?;
-        self.demand.write(writer)?;
+        VarInt(self.demand).write(writer)?;
         Ok(())
     }
 }
@@ -115,12 +115,12 @@ impl ReadFrom for MerchantOffer {
             None
         };
         let out_of_stock = bool::read(data)?;
-        let uses = i32::read(data)?;
-        let max_uses = i32::read(data)?;
-        let xp = i32::read(data)?;
-        let special_price_diff = i32::read(data)?;
+        let uses = VarInt::read(data)?.0;
+        let max_uses = VarInt::read(data)?.0;
+        let xp = VarInt::read(data)?.0;
+        let special_price_diff = VarInt::read(data)?.0;
         let price_multiplier = f32::read(data)?;
-        let demand = i32::read(data)?;
+        let demand = VarInt::read(data)?.0;
 
         Ok(Self {
             base_cost_a,
