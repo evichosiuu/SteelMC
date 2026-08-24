@@ -7,12 +7,18 @@ use steel_registry::blocks::properties::{
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events};
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_registry::vanilla_item_tags::ItemTag;
+use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events, vanilla_items};
+use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
+use crate::player::Player;
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
+    behavior::{
+        BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        block::schedule_placed_liquid_tick,
+    },
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
     world::{
         ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
@@ -127,6 +133,102 @@ impl BlockBehavior for CampfireBlock {
             return;
         };
         world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let is_lit = state.get_value(LIT);
+        let is_waterlogged = state.get_value(WATERLOGGED);
+
+        let is_shovel = inv.with_item(|item| item.item().has_tag(&ItemTag::SHOVELS));
+        let is_flint_and_steel = inv.with_item(|item| item.is(&vanilla_items::FLINT_AND_STEEL));
+        let is_fire_charge = inv.with_item(|item| item.is(&vanilla_items::FIRE_CHARGE));
+
+        if is_lit && is_shovel {
+            world.set_block(
+                pos,
+                state.set_value(LIT, false),
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
+            );
+            world.play_block_sound(
+                &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+                pos,
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(state.set_value(LIT, false))),
+            );
+            inv.with_item(|item| {
+                item.hurt_and_break(1, player.has_infinite_materials());
+            });
+            return InteractionResult::Success;
+        }
+
+        if !is_lit && !is_waterlogged {
+            if is_flint_and_steel {
+                world.set_block(
+                    pos,
+                    state.set_value(LIT, true),
+                    UpdateFlags::UPDATE_ALL_IMMEDIATE,
+                );
+                world.play_block_sound(
+                    &sound_events::ITEM_FLINTANDSTEEL_USE,
+                    pos,
+                    1.0,
+                    1.0,
+                    Some(player.id()),
+                );
+                world.game_event(
+                    &vanilla_game_events::BLOCK_CHANGE,
+                    pos,
+                    &GameEventContext::new(Some(player), Some(state.set_value(LIT, true))),
+                );
+                inv.with_item(|item| {
+                    item.hurt_and_break(1, player.has_infinite_materials());
+                });
+                return InteractionResult::Success;
+            }
+
+            if is_fire_charge {
+                world.set_block(
+                    pos,
+                    state.set_value(LIT, true),
+                    UpdateFlags::UPDATE_ALL_IMMEDIATE,
+                );
+                world.play_block_sound(
+                    &sound_events::ITEM_FLINTANDSTEEL_USE,
+                    pos,
+                    1.0,
+                    1.0,
+                    Some(player.id()),
+                );
+                world.game_event(
+                    &vanilla_game_events::BLOCK_CHANGE,
+                    pos,
+                    &GameEventContext::new(Some(player), Some(state.set_value(LIT, true))),
+                );
+                if !player.has_infinite_materials() {
+                    inv.with_item(|item| {
+                        item.shrink(1);
+                    });
+                }
+                return InteractionResult::Success;
+            }
+        }
+
+        InteractionResult::Pass
     }
 
     fn entity_inside(
