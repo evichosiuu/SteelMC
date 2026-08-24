@@ -7,19 +7,27 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::items::Item;
 use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, Direction, IntProperty},
     },
-    level_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
+    level_events, sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events, vanilla_items,
 };
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation},
+    behavior::{
+        BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        blocks::vegetation,
+    },
     entity::ai::path::PathComputationType,
+    entity::Entity,
+    player::Player,
     world::{LevelReader, World, game_event::GameEventContext},
 };
 
@@ -39,9 +47,101 @@ impl CauldronBlock {
     }
 }
 
+fn give_or_swap_item(player: &Player, inv: &mut InventoryAccess, new_item: &'static Item) {
+    if player.has_infinite_materials() {
+        return;
+    }
+    inv.with_item(|item| {
+        if item.count() == 1 {
+            *item = ItemStack::new(new_item);
+        } else {
+            item.shrink(1);
+        }
+    });
+}
+
 impl BlockBehavior for CauldronBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn use_item_on(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let is_water_bucket = inv.with_item(|item| item.is(&vanilla_items::WATER_BUCKET));
+        let is_lava_bucket = inv.with_item(|item| item.is(&vanilla_items::LAVA_BUCKET));
+        let is_powder_snow_bucket =
+            inv.with_item(|item| item.is(&vanilla_items::POWDER_SNOW_BUCKET));
+
+        if is_water_bucket {
+            let new_state = vanilla_blocks::WATER_CAULDRON
+                .default_state()
+                .set_value(LEVEL_CAULDRON, 3);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.play_block_sound(
+                &sound_events::ITEM_BUCKET_EMPTY,
+                pos,
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(new_state)),
+            );
+            give_or_swap_item(player, inv, &vanilla_items::BUCKET);
+            return InteractionResult::Success;
+        }
+
+        if is_lava_bucket {
+            let new_state = vanilla_blocks::LAVA_CAULDRON.default_state();
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.play_block_sound(
+                &sound_events::ITEM_BUCKET_EMPTY_LAVA,
+                pos,
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(new_state)),
+            );
+            give_or_swap_item(player, inv, &vanilla_items::BUCKET);
+            return InteractionResult::Success;
+        }
+
+        if is_powder_snow_bucket {
+            let new_state = vanilla_blocks::POWDER_SNOW_CAULDRON
+                .default_state()
+                .set_value(LEVEL_CAULDRON, 3);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.play_block_sound(
+                &sound_events::ITEM_BUCKET_EMPTY_POWDER_SNOW,
+                pos,
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(new_state)),
+            );
+            give_or_swap_item(player, inv, &vanilla_items::BUCKET);
+            return InteractionResult::Success;
+        }
+
+        InteractionResult::Pass
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -117,6 +217,75 @@ impl LayeredCauldronBlock {
 impl BlockBehavior for LayeredCauldronBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let level = state.get_value(LEVEL_CAULDRON);
+        let is_water = self.block == &vanilla_blocks::WATER_CAULDRON;
+        let is_powder_snow = self.block == &vanilla_blocks::POWDER_SNOW_CAULDRON;
+
+        let is_bucket = inv.with_item(|item| item.is(&vanilla_items::BUCKET));
+        let is_glass_bottle = inv.with_item(|item| item.is(&vanilla_items::GLASS_BOTTLE));
+
+        if is_bucket && level == 3 {
+            let (new_bucket, sound) = if is_water {
+                (&vanilla_items::WATER_BUCKET, &sound_events::ITEM_BUCKET_FILL)
+            } else if is_powder_snow {
+                (
+                    &vanilla_items::POWDER_SNOW_BUCKET,
+                    &sound_events::ITEM_BUCKET_FILL_POWDER_SNOW,
+                )
+            } else {
+                return InteractionResult::Pass;
+            };
+
+            let empty_state = vanilla_blocks::CAULDRON.default_state();
+            world.set_block(pos, empty_state, UpdateFlags::UPDATE_ALL);
+            world.play_block_sound(sound, pos, 1.0, 1.0, Some(player.id()));
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(empty_state)),
+            );
+            give_or_swap_item(player, inv, new_bucket);
+            return InteractionResult::Success;
+        }
+
+        if is_water && is_glass_bottle && level > 0 {
+            let next_level = level - 1;
+            let new_state = if next_level == 0 {
+                vanilla_blocks::CAULDRON.default_state()
+            } else {
+                state.set_value(LEVEL_CAULDRON, next_level)
+            };
+
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.play_block_sound(
+                &sound_events::ITEM_BOTTLE_FILL,
+                pos,
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(Some(player), Some(new_state)),
+            );
+            give_or_swap_item(player, inv, &vanilla_items::POTION);
+            return InteractionResult::Success;
+        }
+
+        InteractionResult::Pass
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

@@ -35,6 +35,14 @@ impl ShulkerBoxBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    fn can_open(state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        let facing = state.get_value(FACING);
+        let adjacent_pos = pos.relative(facing);
+        let adjacent_state = world.get_block_state(adjacent_pos);
+
+        !adjacent_state.is_solid()
+    }
 }
 
 impl BlockBehavior for ShulkerBoxBlock {
@@ -45,13 +53,17 @@ impl BlockBehavior for ShulkerBoxBlock {
 
     fn use_without_item(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
+        if !Self::can_open(state, world.as_ref(), pos) {
+            return InteractionResult::Pass;
+        }
+
         let Some(block_entity) = world.get_block_entity(pos) else {
             return InteractionResult::Pass;
         };
