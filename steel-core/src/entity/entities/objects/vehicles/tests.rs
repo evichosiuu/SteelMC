@@ -746,3 +746,60 @@ fn mob_pushes_into_boat_and_becomes_passenger() {
     assert_eq!(boat.passengers().len(), 1);
     assert_eq!(cow.vehicle().map(|v| v.id()), Some(1300));
 }
+
+#[test]
+fn minecart_stops_at_solid_block_obstacle() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+
+    let world = fresh_test_world("minecart_obstacle");
+    let chunk_pos = ChunkPos::new(0, 0);
+    insert_ready_full_chunk(&world, chunk_pos);
+
+    // Place rails on stone at (0, 64, 1) and (1, 64, 1)
+    for x in 0..2 {
+        let rail_pos = BlockPos::new(x, 64, 1);
+        world.set_block(rail_pos.below(), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+        let state = vanilla_blocks::RAIL
+            .default_state()
+            .set_value(&steel_registry::blocks::properties::BlockStateProperties::RAIL_SHAPE, steel_registry::blocks::properties::RailShape::EastWest);
+        world.set_block(rail_pos, state, UpdateFlags::UPDATE_NONE);
+    }
+
+    // Place a solid STONE block at (2, 64, 1) blocking the rail path
+    world.set_block(BlockPos::new(2, 64, 1), vanilla_blocks::STONE.default_state(), UpdateFlags::UPDATE_NONE);
+
+    let minecart: SharedEntity = crate::entity::ENTITIES
+        .create(
+            &vanilla_entities::MINECART,
+            1400,
+            DVec3::new(0.5, 64.0625, 1.5),
+            Arc::downgrade(&world),
+        )
+        .expect("should create minecart");
+    world.try_add_entity(Arc::clone(&minecart)).unwrap();
+
+    assert!(minecart.is_on_rails());
+
+    // Push minecart toward +X into the solid wall at x=2
+    minecart.push_impulse(DVec3::new(0.4, 0.0, 0.0));
+
+    // Tick minecart multiple times
+    for _ in 0..10 {
+        minecart.tick();
+    }
+
+    // Solid block is at x=2. Minecart width is 0.98 (half-width 0.49).
+    // The minecart bounding box cannot enter x=2.0, so position.x must be <= 1.51
+    assert!(
+        minecart.position().x < 2.0,
+        "minecart should not enter solid block at x=2, got {}",
+        minecart.position().x
+    );
+    assert!(
+        minecart.position().x <= 1.51,
+        "minecart should stop against solid block wall, got {}",
+        minecart.position().x
+    );
+}

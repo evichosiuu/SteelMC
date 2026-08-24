@@ -277,8 +277,9 @@ impl AbstractMinecart {
             } else {
                 new_pos
             };
-            let _ = entity.try_set_position(final_pos);
+            let move_delta = final_pos - entity.position();
             entity.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
+            let _ = entity.move_entity(MoverType::SelfMovement, move_delta);
             entity.mark_velocity_sync();
         } else {
             // Off rail physics
