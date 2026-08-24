@@ -1048,5 +1048,6 @@ mod fall_and_fluids;
 mod living_state;
 mod movement;
 mod portals;
+mod rideable_mobs;
 mod riding_and_leashes;
 mod travel;
