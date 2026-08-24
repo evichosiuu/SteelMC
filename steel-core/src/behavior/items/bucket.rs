@@ -23,11 +23,17 @@ use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_items;
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::context::UseOnContext;
+use crate::entity::{
+    ENTITIES, Entity, EntitySpawnReason, LivingEntity, RemovalReason, next_entity_id,
+};
+use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 
 /// Handles all bucket variants (empty, water, lava).
@@ -51,6 +57,85 @@ impl ItemBehavior for BucketItem {
             None => use_empty_bucket(context),
             Some(fluid_block) => use_filled_bucket(fluid_block, context),
         }
+    }
+
+    fn interact_living_entity(
+        &self,
+        stack: &mut ItemStack,
+        player: &Player,
+        target: &dyn LivingEntity,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        if self.fluid_block.is_some() {
+            return InteractionResult::Pass;
+        }
+
+        let target_type = target.entity_type();
+
+        if (target_type == &vanilla_entities::COW || target_type == &vanilla_entities::MOOSHROOM)
+            && !target.is_baby()
+        {
+            if let Some(world) = target.level() {
+                world.play_sound_at(
+                    &sound_events::ENTITY_COW_MILK,
+                    steel_protocol::packets::game::SoundSource::Neutral,
+                    target.position(),
+                    1.0,
+                    1.0,
+                    None,
+                );
+            }
+            if !player.has_infinite_materials() {
+                stack.shrink(1);
+                let milk = ItemStack::new(&vanilla_items::MILK_BUCKET);
+                if stack.is_empty() {
+                    player.inventory.lock().set_item_in_hand(hand, milk);
+                } else {
+                    player.add_item_or_drop(milk);
+                }
+            }
+            return InteractionResult::Success;
+        }
+
+        let (bucket_item, sound) = if target_type == &vanilla_entities::COD {
+            (&vanilla_items::COD_BUCKET, &sound_events::ITEM_BUCKET_FILL_FISH)
+        } else if target_type == &vanilla_entities::SALMON {
+            (&vanilla_items::SALMON_BUCKET, &sound_events::ITEM_BUCKET_FILL_FISH)
+        } else if target_type == &vanilla_entities::PUFFERFISH {
+            (&vanilla_items::PUFFERFISH_BUCKET, &sound_events::ITEM_BUCKET_FILL_FISH)
+        } else if target_type == &vanilla_entities::TROPICAL_FISH {
+            (&vanilla_items::TROPICAL_FISH_BUCKET, &sound_events::ITEM_BUCKET_FILL_FISH)
+        } else if target_type == &vanilla_entities::AXOLOTL {
+            (&vanilla_items::AXOLOTL_BUCKET, &sound_events::ITEM_BUCKET_FILL_AXOLOTL)
+        } else if target_type == &vanilla_entities::TADPOLE {
+            (&vanilla_items::TADPOLE_BUCKET, &sound_events::ITEM_BUCKET_FILL_TADPOLE)
+        } else {
+            return InteractionResult::Pass;
+        };
+
+        if let Some(world) = target.level() {
+            world.play_sound_at(
+                sound,
+                steel_protocol::packets::game::SoundSource::Neutral,
+                target.position(),
+                1.0,
+                1.0,
+                None,
+            );
+        }
+        target.set_removed(RemovalReason::Discarded);
+
+        if !player.has_infinite_materials() {
+            stack.shrink(1);
+            let filled = ItemStack::new(bucket_item);
+            if stack.is_empty() {
+                player.inventory.lock().set_item_in_hand(hand, filled);
+            } else {
+                player.add_item_or_drop(filled);
+            }
+        }
+
+        InteractionResult::Success
     }
 }
 
@@ -94,6 +179,24 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     };
 
     let hit_state = context.world.get_block_state(hit_pos);
+
+    if hit_state.get_block() == &vanilla_blocks::POWDER_SNOW {
+        context.world.set_block(
+            hit_pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL_IMMEDIATE,
+        );
+        context.world.play_block_sound(
+            &sound_events::ITEM_BUCKET_FILL_POWDER_SNOW,
+            hit_pos,
+            1.0,
+            1.0,
+            Some(context.player.id()),
+        );
+        create_filled_result(context, ItemStack::new(&vanilla_items::POWDER_SNOW_BUCKET), true);
+        return InteractionResult::Success;
+    }
+
     let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
 
     if let Some(result) =
@@ -334,10 +437,141 @@ fn filled_bucket_primary_pos(
     }
 }
 
+/// Behavior for solid bucket items like powder snow bucket.
+#[item_behavior]
+pub struct SolidBucketItem;
+
+impl ItemBehavior for SolidBucketItem {
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        let clicked_pos = context.hit_result.block_pos;
+        let clicked_state = context.world.get_block_state(clicked_pos);
+        let place_pos = if clicked_state.can_be_replaced_by_fluid(&vanilla_blocks::POWDER_SNOW) {
+            clicked_pos
+        } else {
+            context.hit_result.direction.relative(clicked_pos)
+        };
+
+        if !context.world.is_in_valid_bounds(place_pos) {
+            return InteractionResult::Fail;
+        }
+
+        let place_state = context.world.get_block_state(place_pos);
+        if !place_state.can_be_replaced_by_fluid(&vanilla_blocks::POWDER_SNOW) {
+            return InteractionResult::Fail;
+        }
+
+        context.world.set_block(
+            place_pos,
+            vanilla_blocks::POWDER_SNOW.default_state(),
+            UpdateFlags::UPDATE_ALL_IMMEDIATE,
+        );
+        context.world.play_block_sound(
+            &sound_events::ITEM_BUCKET_EMPTY_POWDER_SNOW,
+            place_pos,
+            1.0,
+            1.0,
+            Some(context.player.id()),
+        );
+
+        if !context.player.has_infinite_materials() {
+            context.inv.with_item(|item| {
+                *item = ItemStack::new(&vanilla_items::BUCKET);
+            });
+        }
+
+        InteractionResult::Success
+    }
+}
+
+/// Behavior for mob buckets (cod, salmon, axolotl, tadpole, etc.).
+#[item_behavior]
+pub struct MobBucketItem;
+
+impl ItemBehavior for MobBucketItem {
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        let clicked_pos = context.hit_result.block_pos;
+        let clicked_state = context.world.get_block_state(clicked_pos);
+        let place_pos = if clicked_state.can_be_replaced_by_fluid(&vanilla_blocks::WATER) {
+            clicked_pos
+        } else {
+            context.hit_result.direction.relative(clicked_pos)
+        };
+
+        if !context.world.is_in_valid_bounds(place_pos) {
+            return InteractionResult::Fail;
+        }
+
+        let item_key = context.inv.with_item(|item| item.item().key.clone());
+
+        let (entity_type, sound) = if item_key == vanilla_items::COD_BUCKET.key {
+            (&vanilla_entities::COD, &sound_events::ITEM_BUCKET_EMPTY_FISH)
+        } else if item_key == vanilla_items::SALMON_BUCKET.key {
+            (&vanilla_entities::SALMON, &sound_events::ITEM_BUCKET_EMPTY_FISH)
+        } else if item_key == vanilla_items::PUFFERFISH_BUCKET.key {
+            (&vanilla_entities::PUFFERFISH, &sound_events::ITEM_BUCKET_EMPTY_FISH)
+        } else if item_key == vanilla_items::TROPICAL_FISH_BUCKET.key {
+            (&vanilla_entities::TROPICAL_FISH, &sound_events::ITEM_BUCKET_EMPTY_FISH)
+        } else if item_key == vanilla_items::AXOLOTL_BUCKET.key {
+            (&vanilla_entities::AXOLOTL, &sound_events::ITEM_BUCKET_EMPTY_AXOLOTL)
+        } else if item_key == vanilla_items::TADPOLE_BUCKET.key {
+            (&vanilla_entities::TADPOLE, &sound_events::ITEM_BUCKET_EMPTY_TADPOLE)
+        } else {
+            (&vanilla_entities::COD, &sound_events::ITEM_BUCKET_EMPTY_FISH)
+        };
+
+        let state = context.world.get_block_state(place_pos);
+        if state.can_be_replaced_by_fluid(&vanilla_blocks::WATER) {
+            context.world.set_block(
+                place_pos,
+                vanilla_blocks::WATER.default_state(),
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
+            );
+        }
+
+        let spawn_pos = glam::DVec3::new(
+            f64::from(place_pos.x()) + 0.5,
+            f64::from(place_pos.y()) + 0.1,
+            f64::from(place_pos.z()) + 0.5,
+        );
+        if let Some(mob) = ENTITIES.create(
+            entity_type,
+            next_entity_id(),
+            spawn_pos,
+            std::sync::Arc::downgrade(context.world),
+        ) {
+            if let Some(mob_base) = mob.as_mob() {
+                mob_base.finalize_spawn(context.world, EntitySpawnReason::Bucket, None);
+            }
+            let _ = context.world.try_add_entity(mob);
+        }
+
+        context.world.play_block_sound(
+            sound,
+            place_pos,
+            1.0,
+            1.0,
+            Some(context.player.id()),
+        );
+
+        if !context.player.has_infinite_materials() {
+            context.inv.with_item(|item| {
+                *item = ItemStack::new(&vanilla_items::BUCKET);
+            });
+        }
+
+        InteractionResult::Success
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use glam::DVec3;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities, vanilla_items};
+    use steel_utils::types::InteractionHand;
     use crate::behavior::init_behaviors;
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use crate::entity::init_entities;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
 
@@ -356,5 +590,38 @@ mod tests {
             filled_bucket_primary_pos(kelp, BlockPos::ZERO, Direction::North, false),
             Direction::North.relative(BlockPos::ZERO)
         );
+    }
+
+    #[test]
+    fn empty_bucket_milks_cow_giving_milk_bucket() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+
+        let world = fresh_test_world("empty_bucket_milks_cow");
+        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+
+        let cow = crate::entity::entities::CowEntity::new(
+            &vanilla_entities::COW,
+            next_entity_id(),
+            DVec3::new(1.0, 64.0, 1.0),
+            Arc::downgrade(&world),
+        );
+
+        let mut stack = ItemStack::new(&vanilla_items::BUCKET);
+        let player = TestPlayerBuilder::new(world.clone(), "player", 1).build();
+
+        let behavior = BucketItem::new(None);
+        let result = behavior.interact_living_entity(
+            &mut stack,
+            &player,
+            &cow,
+            InteractionHand::MainHand,
+        );
+
+        assert_eq!(result, InteractionResult::Success);
+        let inv = player.inventory.lock();
+        let in_hand = inv.get_item_in_hand(InteractionHand::MainHand);
+        assert!(in_hand.is(&vanilla_items::MILK_BUCKET));
     }
 }

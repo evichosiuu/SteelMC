@@ -47,7 +47,7 @@ pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use boat_item::BoatItem;
 pub use bonemeal::BoneMealItem;
 pub use brush::BrushItem;
-pub use bucket::BucketItem;
+pub use bucket::{BucketItem, MobBucketItem, SolidBucketItem};
 pub use compass::CompassItem;
 pub use default::DefaultItemBehavior;
 pub use dye::DyeItem;

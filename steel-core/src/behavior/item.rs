@@ -52,8 +52,11 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: Mirror Item.use/finishUsingItem for CONSUMABLE, BLOCKS_ATTACKS, and
-        // KINETIC_WEAPON so specialized behaviors inherit the complete Vanilla base path.
+        if context.inv.with_item(|item| item.has(BLOCKS_ATTACKS)) {
+            context.player.start_using_item(context.hand);
+            return InteractionResult::Consume;
+        }
+
         let Some(equippable) = context.inv.with_item(|item| item.get_equippable().cloned()) else {
             return InteractionResult::Pass;
         };

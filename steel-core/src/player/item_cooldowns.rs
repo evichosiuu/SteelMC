@@ -81,6 +81,21 @@ impl Player {
         }
     }
 
+    /// Adds a cooldown for a specific cooldown group.
+    pub fn add_cooldown(&self, group: Identifier, duration: i32) {
+        if duration <= 0 {
+            return;
+        }
+        let mut cooldowns = self.item_cooldowns.lock();
+        let end_time = cooldowns.tick_count + duration;
+        cooldowns.cooldowns.insert(group.clone(), CooldownInstance { end_time });
+        drop(cooldowns);
+        self.send_packet(CCooldown {
+            cooldown_group: group,
+            duration,
+        });
+    }
+
     pub(super) fn tick_item_cooldowns(&self) {
         let ended = self.item_cooldowns.lock().tick();
         for cooldown_group in ended {
