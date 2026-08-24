@@ -1,29 +1,41 @@
 //! Vanilla SkeletonHorse entity implementation.
 
+use std::str::FromStr;
 use std::sync::Weak;
+
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::SkeletonHorseEntityData;
-use steel_registry::sound_events;
+use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use uuid::Uuid;
 
+use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
     FloatGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
-    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob,
+    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
+use crate::player::Player;
 use crate::world::World;
 
+const FLAG_TAMED: i8 = 0x02;
+const FLAG_SADDLED: i8 = 0x04;
+
+/// Vanilla skeleton horse entity.
 #[entity_behavior(class = "SkeletonHorse")]
 pub struct SkeletonHorseEntity {
     base: EntityBase,
@@ -32,6 +44,8 @@ pub struct SkeletonHorseEntity {
     mob_base: MobBase,
     ageable_base: AgeableMobBase,
     animal_base: AnimalBase,
+    is_trap: SyncMutex<bool>,
+    owner_uuid: SyncMutex<Option<Uuid>>,
     entity_data: SyncMutex<SkeletonHorseEntityData>,
 }
 
@@ -82,42 +96,207 @@ impl SkeletonHorseEntity {
             mob_base,
             ageable_base,
             animal_base,
+            is_trap: SyncMutex::new(false),
+            owner_uuid: SyncMutex::new(None),
             entity_data: SyncMutex::new(entity_data),
         }
+    }
+
+    /// Returns whether this horse is a skeleton trap.
+    #[must_use]
+    pub fn is_trap(&self) -> bool {
+        *self.is_trap.lock()
+    }
+
+    /// Sets whether this horse is a skeleton trap.
+    pub fn set_trap(&self, trap: bool) {
+        *self.is_trap.lock() = trap;
+    }
+
+    /// Returns whether the horse is tamed.
+    #[must_use]
+    pub fn is_tamed(&self) -> bool {
+        (self.get_horse_flags() & FLAG_TAMED) != 0
+    }
+
+    /// Sets whether the horse is tamed.
+    pub fn set_tamed(&self, tamed: bool) {
+        self.set_horse_flag(FLAG_TAMED, tamed);
+    }
+
+    /// Returns whether the horse is saddled.
+    #[must_use]
+    pub fn is_saddled(&self) -> bool {
+        (self.get_horse_flags() & FLAG_SADDLED) != 0
+    }
+
+    /// Sets whether the horse is saddled.
+    pub fn set_saddled(&self, saddled: bool) {
+        self.set_horse_flag(FLAG_SADDLED, saddled);
+    }
+
+    fn get_horse_flags(&self) -> i8 {
+        *self.entity_data.lock().abstract_horse().id_flags.get()
+    }
+
+    fn set_horse_flag(&self, flag: i8, set: bool) {
+        let mut data = self.entity_data.lock();
+        let current = *data.abstract_horse().id_flags.get();
+        let next = if set {
+            current | flag
+        } else {
+            current & !flag
+        };
+        data.abstract_horse_mut().id_flags.set(next);
+    }
+
+    fn set_ridden_rotation(&self, controller_yaw: f32, controller_pitch: f32) {
+        self.set_rotation((controller_yaw, controller_pitch * 0.5));
+        self.base.set_old_yaw_to_current();
+        let yaw = self.rotation().0;
+        self.set_y_body_rot(yaw);
+        self.set_y_head_rot(yaw);
     }
 }
 
 impl Entity for SkeletonHorseEntity {
-    fn base(&self) -> &EntityBase { &self.base }
-    fn entity_type(&self) -> EntityTypeRef { self.entity_type }
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> { Some(&self.entity_data) }
-    fn base_tick(&self) { Mob::base_tick_mob(self); }
-    fn sound_source(&self) -> SoundSource { SoundSource::Neutral }
-    fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn base_tick(&self) {
+        Mob::base_tick_mob(self);
+    }
+
+    fn sound_source(&self) -> SoundSource {
+        SoundSource::Neutral
+    }
+
+    fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
+        self.play_sound(&sound_events::ENTITY_HORSE_STEP, 0.15, 1.0);
+    }
+
+    fn controlling_passenger(&self) -> Option<SharedEntity> {
+        if self.is_saddled()
+            && let Some(passenger) = self.first_passenger()
+            && passenger.as_player().is_some()
+        {
+            return Some(passenger);
+        }
+        self.controlling_passenger_mob()
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_mob(nbt);
         self.save_ageable_mob(nbt);
         self.save_animal(nbt);
+        nbt.insert("Tame", i8::from(self.is_tamed()));
+        nbt.insert("Saddled", i8::from(self.is_saddled()));
+        nbt.insert("SkeletonTrap", i8::from(self.is_trap()));
+        if let Some(owner) = *self.owner_uuid.lock() {
+            nbt.insert("Owner", owner.to_string());
+        }
     }
+
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
+        if let Some(tame) = nbt.byte("Tame") {
+            self.set_tamed(tame != 0);
+        }
+        if let Some(saddled) = nbt.byte("Saddled") {
+            self.set_saddled(saddled != 0);
+        }
+        if let Some(trap) = nbt.byte("SkeletonTrap") {
+            self.set_trap(trap != 0);
+        }
+        if let Some(owner_str) = nbt.string("Owner")
+            && let Ok(uuid) = Uuid::from_str(owner_str.to_str().as_ref())
+        {
+            *self.owner_uuid.lock() = Some(uuid);
+        }
     }
 }
 
 impl LivingEntity for SkeletonHorseEntity {
-    fn living_base(&self) -> &LivingEntityBase { &self.living_base }
-    fn get_health(&self) -> f32 { *self.entity_data.lock().living_entity().health.get() }
+    fn living_base(&self) -> &LivingEntityBase {
+        &self.living_base
+    }
+
+    fn get_health(&self) -> f32 {
+        *self.entity_data.lock().living_entity().health.get()
+    }
+
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.entity_data.lock().living_entity_mut().health.set(clamped);
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
-    fn sound_volume(&self) -> f32 { 0.4 }
-    fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> { Some(&sound_events::ENTITY_SKELETON_HORSE_HURT) }
-    fn death_sound(&self) -> Option<SoundEventRef> { Some(&sound_events::ENTITY_SKELETON_HORSE_DEATH) }
-    fn server_ai_step(&self) { Mob::mob_server_ai_step(self); }
+
+    fn sound_volume(&self) -> f32 {
+        0.4
+    }
+
+    fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
+        Some(&sound_events::ENTITY_SKELETON_HORSE_HURT)
+    }
+
+    fn death_sound(&self) -> Option<SoundEventRef> {
+        Some(&sound_events::ENTITY_SKELETON_HORSE_DEATH)
+    }
+
+    fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
+        match slot {
+            EquipmentSlot::Saddle => Entity::is_alive(self) && !AgeableMob::is_baby(self),
+            _ => false,
+        }
+    }
+
+    fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
+        slot == EquipmentSlot::Saddle
+    }
+
+    fn equip_sound(&self, slot: EquipmentSlot, _stack: &ItemStack) -> Option<SoundEventRef> {
+        match slot {
+            EquipmentSlot::Saddle => Some(&sound_events::ENTITY_HORSE_SADDLE),
+            _ => None,
+        }
+    }
+
+    fn server_ai_step(&self) {
+        Mob::mob_server_ai_step(self);
+    }
+
+    fn tick_ridden(&self, controller: &Player, _ridden_input: DVec3) {
+        let (yaw, pitch) = controller.rotation();
+        self.set_ridden_rotation(yaw, pitch);
+    }
+
+    fn ridden_input(&self, _controller: &Player, _self_input: DVec3) -> DVec3 {
+        DVec3::new(0.0, 0.0, 1.0)
+    }
+
+    fn ridden_speed(&self, _controller: &Player) -> f32 {
+        let movement_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
+        movement_speed * 0.225
+    }
+
     fn ai_step(&self) -> Option<MoveResult> {
         let result = self.default_ai_step();
         AgeableMob::tick_ageable_mob(self);
@@ -127,24 +306,87 @@ impl LivingEntity for SkeletonHorseEntity {
 }
 
 impl AgeableMob for SkeletonHorseEntity {
-    fn ageable_base(&self) -> &AgeableMobBase { &self.ageable_base }
-    fn is_age_locked(&self) -> bool { *self.entity_data.lock().ageable_mob().age_locked.get() }
-    fn set_age_locked(&self, age_locked: bool) { self.entity_data.lock().ageable_mob_mut().age_locked.set(age_locked); }
-    fn set_synced_baby(&self, baby: bool) { self.entity_data.lock().ageable_mob_mut().baby.set(baby); }
-    fn age_boundary_changed(&self, _baby: bool) { self.refresh_dimensions(); }
+    fn ageable_base(&self) -> &AgeableMobBase {
+        &self.ageable_base
+    }
+
+    fn is_age_locked(&self) -> bool {
+        *self.entity_data.lock().ageable_mob().age_locked.get()
+    }
+
+    fn set_age_locked(&self, age_locked: bool) {
+        self.entity_data
+            .lock()
+            .ageable_mob_mut()
+            .age_locked
+            .set(age_locked);
+    }
+
+    fn set_synced_baby(&self, baby: bool) {
+        self.entity_data.lock().ageable_mob_mut().baby.set(baby);
+    }
+
+    fn age_boundary_changed(&self, _baby: bool) {
+        self.refresh_dimensions();
+    }
 }
 
 impl Animal for SkeletonHorseEntity {
-    fn animal_base(&self) -> &AnimalBase { &self.animal_base }
+    fn animal_base(&self) -> &AnimalBase {
+        &self.animal_base
+    }
 }
 
 impl Mob for SkeletonHorseEntity {
-    fn mob_base(&self) -> &MobBase { &self.mob_base }
-    fn tick_goal_selectors(&self) { PathfinderMob::tick_pathfinder_goal_selectors(self); }
-    fn tick_path_navigation(&self) { PathfinderMob::tick_pathfinder_path_navigation(self); }
-    fn ambient_sound(&self) -> Option<SoundEventRef> { Some(&sound_events::ENTITY_SKELETON_HORSE_AMBIENT) }
-    fn mob_flags(&self) -> i8 { *self.entity_data.lock().mob().mob_flags.get() }
-    fn set_mob_flags(&self, flags: i8) { self.entity_data.lock().mob_mut().mob_flags.set(flags); }
+    fn mob_base(&self) -> &MobBase {
+        &self.mob_base
+    }
+
+    fn tick_goal_selectors(&self) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    }
+
+    fn tick_path_navigation(&self) {
+        PathfinderMob::tick_pathfinder_path_navigation(self);
+    }
+
+    fn ambient_sound(&self) -> Option<SoundEventRef> {
+        Some(&sound_events::ENTITY_SKELETON_HORSE_AMBIENT)
+    }
+
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        let item_stack = {
+            let inventory = player.inventory.lock();
+            let stack = inventory.get_item_in_hand(hand);
+            stack.copy_with_count(stack.count())
+        };
+
+        if !item_stack.is_empty()
+            && LivingEntity::is_equippable_in_slot(self, &item_stack, EquipmentSlot::Saddle)
+        {
+            self.set_saddled(true);
+            return LivingEntity::interact_living_entity_with_equippable(self, player, hand);
+        }
+
+        if !AgeableMob::is_baby(self) && !player.is_secondary_use_active() {
+            if let Some(world) = self.level()
+                && let Some(vehicle) = world.get_entity_by_id(self.id())
+            {
+                player.start_riding(&vehicle);
+            }
+            return InteractionResult::Success;
+        }
+
+        InteractionResult::Pass
+    }
+
+    fn mob_flags(&self) -> i8 {
+        *self.entity_data.lock().mob().mob_flags.get()
+    }
+
+    fn set_mob_flags(&self, flags: i8) {
+        self.entity_data.lock().mob_mut().mob_flags.set(flags);
+    }
 }
 
 impl PathfinderMob for SkeletonHorseEntity {}
