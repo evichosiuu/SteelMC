@@ -5,7 +5,7 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    level_events,
+    level_events, sound_events,
     vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_game_events,
 };
@@ -14,6 +14,7 @@ use steel_utils::types::UpdateFlags;
 
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    entity::Entity,
     world::game_event::GameEventContext,
 };
 
@@ -50,7 +51,13 @@ impl ItemBehavior for ShovelItem {
             {
                 return InteractionResult::Pass;
             }
-            // TODO: Play SoundEvents.SHOVEL_FLATTEN
+            context.world.play_block_sound(
+                &sound_events::ITEM_SHOVEL_FLATTEN,
+                context.hit_result.block_pos,
+                1.0,
+                1.0,
+                Some(context.player.id()),
+            );
             let infinite_materials = context.player.has_infinite_materials();
             context
                 .inv
@@ -87,7 +94,10 @@ impl ItemBehavior for ShovelItem {
                 updated_state,
                 UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
-            // TODO: hurt_and_break(1, ...) — shovels take durability damage
+            let infinite_materials = context.player.has_infinite_materials();
+            context
+                .inv
+                .with_item(|item| item.hurt_and_break(1, infinite_materials));
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 context.hit_result.block_pos,

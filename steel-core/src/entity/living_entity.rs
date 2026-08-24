@@ -1,3 +1,4 @@
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::DyeColor;
 
 use super::*;
@@ -609,7 +610,54 @@ pub trait LivingEntity: Entity {
             damage = 0.0;
         }
 
-        // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
+        let is_blocked = if self.is_blocking()
+            && !source.bypasses_invulnerability()
+            && !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_SHIELD)
+            && !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_ARMOR)
+            && is_damage_source_in_front(self, world, source)
+        {
+            self.play_sound(
+                &sound_events::ITEM_SHIELD_BLOCK,
+                1.0,
+                0.8 + rand::random::<f32>() * 0.4,
+            );
+
+            let active_hand = self
+                .living_base()
+                .active_item_use()
+                .map(|a| a.hand())
+                .unwrap_or(InteractionHand::MainHand);
+            let slot = match active_hand {
+                InteractionHand::MainHand => EquipmentSlot::MainHand,
+                InteractionHand::OffHand => EquipmentSlot::OffHand,
+            };
+
+            let shield_damage = 1 + (amount / 4.0) as i32;
+            let mut item_broke = false;
+            self.with_equipment_slot_mut(slot, &mut |stack| {
+                item_broke = stack.hurt_and_break(shield_damage, self.has_infinite_materials());
+            });
+            if item_broke {
+                self.on_equipped_item_broken(slot);
+            }
+
+            if is_axe_attack(world, source) {
+                if let Some(player) = self.as_player() {
+                    let shield_group = steel_utils::Identifier::vanilla_static("shield");
+                    player.add_cooldown(shield_group, 100);
+                    player.release_using_item();
+                }
+            }
+
+            true
+        } else {
+            false
+        };
+
+        if is_blocked {
+            return false;
+        }
+
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
             && REGISTRY
                 .entity_types
@@ -1433,12 +1481,27 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity is currently using an item.
     fn is_using_item(&self) -> bool {
-        false
+        self.living_base().is_using_item()
     }
 
     /// Checks if the entity is blocking with a shield or similar item.
     fn is_blocking(&self) -> bool {
-        false
+        if !self.is_using_item() {
+            return false;
+        }
+        let mut blocking = false;
+        if let Some(active) = self.living_base().active_item_use() {
+            let slot = match active.hand() {
+                InteractionHand::MainHand => EquipmentSlot::MainHand,
+                InteractionHand::OffHand => EquipmentSlot::OffHand,
+            };
+            self.with_equipment_slot(slot, &mut |stack| {
+                if stack.has(BLOCKS_ATTACKS) {
+                    blocking = true;
+                }
+            });
+        }
+        blocking
     }
 
     /// Checks if the entity is fall flying (using elytra).
@@ -2987,4 +3050,60 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
         context = context.with_game_time(level.game_time());
     }
     loot_table.get_random_items(&mut context)
+}
+
+fn is_damage_source_in_front<E: LivingEntity + ?Sized>(
+    entity: &E,
+    world: &World,
+    source: &DamageSource,
+) -> bool {
+    let source_pos = source.source_position.or_else(|| {
+        source
+            .direct_entity_id
+            .or(source.causing_entity_id)
+            .and_then(|id| world.get_entity_by_id(id))
+            .map(|e| e.position())
+    });
+    let Some(source_pos) = source_pos else {
+        return false;
+    };
+
+    let entity_pos = entity.position();
+    let diff = DVec3::new(source_pos.x - entity_pos.x, 0.0, source_pos.z - entity_pos.z);
+    if diff.length_squared() <= 1.0e-5 {
+        return false;
+    }
+    let to_source = diff.normalize();
+
+    let (yaw, pitch) = entity.rotation();
+    let yaw_rad = (yaw + 90.0).to_radians();
+    let pitch_rad = (-pitch).to_radians();
+    let look_vector = DVec3::new(
+        f64::from(pitch_rad.cos() * yaw_rad.cos()),
+        0.0,
+        f64::from(pitch_rad.cos() * yaw_rad.sin()),
+    )
+    .normalize();
+
+    look_vector.dot(to_source) > 0.0
+}
+
+fn is_axe_attack(world: &World, source: &DamageSource) -> bool {
+    let attacker = source
+        .direct_entity_id
+        .or(source.causing_entity_id)
+        .and_then(|id| world.get_entity_by_id(id));
+    let Some(attacker) = attacker else {
+        return false;
+    };
+    let Some(living) = attacker.as_living_entity() else {
+        return false;
+    };
+
+    let mut holding_axe = false;
+    living.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
+        let path = &stack.item().key.path;
+        holding_axe = path.ends_with("_axe") || path == "axe";
+    });
+    holding_axe
 }
