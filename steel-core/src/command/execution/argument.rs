@@ -5,7 +5,9 @@ use super::{
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_predicate, suggest_blocks},
-    coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    coordinates::{
+        Angle, parse_angle, parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates,
+    },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
@@ -173,6 +175,10 @@ impl SteelArgumentType {
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
         Self::new(Vec3Parser { center_integers })
+    }
+
+    pub(crate) fn angle() -> Self {
+        Self::new(AngleParser)
     }
 
     pub(crate) fn rotation() -> Self {
@@ -480,6 +486,7 @@ macro_rules! impl_downcast_type {
 
 impl_downcast_type!(PrimitiveArgumentValue, "steel:command/value/primitive");
 impl_downcast_type!(Coordinates, "steel:command/value/coordinates");
+impl_downcast_type!(Angle, "steel:command/value/angle");
 impl_downcast_type!(EntityAnchor, "steel:command/value/entity_anchor");
 impl_downcast_type!(CoordinateAxes, "steel:command/value/swizzle");
 impl_downcast_type!(HeightmapType, "steel:command/value/heightmap");
@@ -682,6 +689,16 @@ impl SteelArgumentParser for Vec3Parser {
     }
 }
 
+unit_argument_parser!(
+    AngleParser,
+    "steel:command/parser/angle",
+    Angle,
+    parse | reader,
+    _source | { parse_angle(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Angle, None)
+);
 unit_argument_parser!(
     RotationParser,
     "steel:command/parser/rotation",

@@ -21,7 +21,7 @@ use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::G
 use text_components::TextComponent;
 
 use super::{
-    BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    Angle, BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
@@ -397,6 +397,13 @@ where
 }
 
 impl SteelCommandContext<CommandSource> {
+    /// Returns a resolved angle argument in degrees.
+    pub(crate) fn angle(&self, name: &str) -> Result<f32, CommandSyntaxError> {
+        let (yaw, _) = self.source().rotation();
+        self.typed_argument::<Angle>(name)
+            .map(|angle| angle.angle(yaw))
+    }
+
     pub(crate) fn score_holders(
         &self,
         name: &str,

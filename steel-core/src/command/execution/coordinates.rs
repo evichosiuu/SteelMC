@@ -347,6 +347,34 @@ fn parse_world_coordinate_double(
     Ok(WorldCoordinate::new(relative, value))
 }
 
+/// An angle expression (absolute or source-relative angle in degrees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Angle(WorldCoordinate);
+
+impl Angle {
+    pub(super) const fn new(coordinate: WorldCoordinate) -> Self {
+        Self(coordinate)
+    }
+
+    /// Resolves this angle expression to degrees using the origin yaw in degrees.
+    pub(crate) fn angle(self, origin_yaw: f32) -> f32 {
+        self.0.resolve(f64::from(origin_yaw)) as f32
+    }
+}
+
+pub(super) fn parse_angle(
+    reader: &mut StringReader<'_>,
+) -> Result<Angle, CommandSyntaxError> {
+    if !reader.can_read() {
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_ANGLE_INCOMPLETE,
+        ));
+    }
+    let coordinate = parse_world_coordinate_double(reader, false)?;
+    Ok(Angle::new(coordinate))
+}
+
 pub(super) fn parse_rotation(
     reader: &mut StringReader<'_>,
 ) -> Result<Coordinates, CommandSyntaxError> {
