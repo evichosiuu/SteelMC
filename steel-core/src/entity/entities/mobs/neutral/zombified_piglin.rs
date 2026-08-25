@@ -86,11 +86,13 @@ impl ZombifiedPiglinEntity {
         }
     }
 
+    /// Returns whether this zombified piglin is a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
         *self.entity_data.lock().zombie().baby.get()
     }
 
+    /// Sets whether this zombified piglin is a baby.
     pub fn set_baby(&self, baby: bool) {
         self.entity_data.lock().zombie_mut().baby.set(baby);
     }

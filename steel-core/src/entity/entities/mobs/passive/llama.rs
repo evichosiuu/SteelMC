@@ -27,7 +27,7 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
-    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity,
+    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
