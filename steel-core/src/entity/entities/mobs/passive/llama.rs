@@ -1035,3 +1035,49 @@ impl Mob for TraderLlamaEntity {
 }
 
 impl PathfinderMob for TraderLlamaEntity {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+
+    #[test]
+    fn test_llama_chest_and_tame_flags() {
+        init_vanilla_registry();
+        let llama = LlamaEntity::new(
+            &vanilla_entities::LLAMA,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+
+        assert!(!llama.is_tamed());
+        assert!(!llama.has_chest());
+
+        llama.set_tamed(true);
+        assert!(llama.is_tamed());
+
+        llama.set_has_chest(true);
+        assert!(llama.has_chest());
+    }
+
+    #[test]
+    fn test_trader_llama_chest_and_tame_flags() {
+        init_vanilla_registry();
+        let trader_llama = TraderLlamaEntity::new(
+            &vanilla_entities::TRADER_LLAMA,
+            2,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+
+        assert!(!trader_llama.is_tamed());
+        assert!(!trader_llama.has_chest());
+
+        trader_llama.set_tamed(true);
+        assert!(trader_llama.is_tamed());
+
+        trader_llama.set_has_chest(true);
+        assert!(trader_llama.has_chest());
+    }
+}
