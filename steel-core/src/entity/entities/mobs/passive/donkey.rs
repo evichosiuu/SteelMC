@@ -566,3 +566,33 @@ impl Mob for DonkeyEntity {
 }
 
 impl PathfinderMob for DonkeyEntity {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+
+    #[test]
+    fn test_donkey_chest_saddle_and_tame_flags() {
+        init_vanilla_registry();
+        let donkey = DonkeyEntity::new(
+            &vanilla_entities::DONKEY,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+
+        assert!(!donkey.is_tamed());
+        assert!(!donkey.is_saddled());
+        assert!(!donkey.has_chest());
+
+        donkey.set_tamed(true);
+        assert!(donkey.is_tamed());
+
+        donkey.set_saddled(true);
+        assert!(donkey.is_saddled());
+
+        donkey.set_has_chest(true);
+        assert!(donkey.has_chest());
+    }
+}
