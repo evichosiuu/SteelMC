@@ -90,15 +90,18 @@ impl PiglinEntity {
         }
     }
 
+    /// Returns time spent in overworld before zombifying.
     #[must_use]
     pub fn time_in_overworld(&self) -> i32 {
         *self.time_in_overworld.lock()
     }
 
+    /// Sets time spent in overworld before zombifying.
     pub fn set_time_in_overworld(&self, time: i32) {
         *self.time_in_overworld.lock() = time;
     }
 
+    /// Returns whether this piglin is immune to zombification.
     #[must_use]
     pub fn is_immune_to_zombification(&self) -> bool {
         *self
@@ -109,6 +112,7 @@ impl PiglinEntity {
             .get()
     }
 
+    /// Sets whether this piglin is immune to zombification.
     pub fn set_immune_to_zombification(&self, immune: bool) {
         self.entity_data
             .lock()
@@ -117,11 +121,13 @@ impl PiglinEntity {
             .set(immune);
     }
 
+    /// Returns whether this piglin is a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
         *self.entity_data.lock().piglin().baby.get()
     }
 
+    /// Sets whether this piglin is a baby.
     pub fn set_baby(&self, baby: bool) {
         self.entity_data.lock().piglin_mut().baby.set(baby);
     }

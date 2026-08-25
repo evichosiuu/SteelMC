@@ -215,3 +215,57 @@ fn hoglin_zombifies_into_zoglin_in_overworld() {
     assert_eq!(loaded_hoglin.time_in_overworld(), 301);
     assert!(loaded_hoglin.is_baby());
 }
+
+#[test]
+fn piglin_brute_zombifies_in_overworld() {
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtCompound;
+    use steel_utils::{ChunkPos, Downcast};
+    use crate::entity::entities::mobs::hostile::PiglinBruteEntity;
+    use crate::entity::{ENTITIES, next_entity_id};
+    use crate::test_support::insert_ready_full_chunk;
+
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("piglin_brute_zombify");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let brute = ENTITIES
+        .create(
+            &vanilla_entities::PIGLIN_BRUTE,
+            next_entity_id(),
+            DVec3::new(0.0, 64.0, 0.0),
+            std::sync::Arc::downgrade(&world),
+        )
+        .expect("should create piglin brute");
+
+    world.try_add_entity(brute.clone()).expect("should add piglin brute");
+
+    let brute_typed = brute.as_ref().downcast_ref::<PiglinBruteEntity>().unwrap();
+    brute_typed.set_time_in_overworld(300);
+
+    brute.base_tick();
+
+    assert!(brute.is_removed());
+
+    let entities = world.entity_manager().get_accessible_entities();
+    let zombified = entities
+        .iter()
+        .find(|e| e.entity_type() == &vanilla_entities::ZOMBIFIED_PIGLIN)
+        .expect("should find zombified piglin from brute in world");
+    assert_eq!(zombified.entity_type(), &vanilla_entities::ZOMBIFIED_PIGLIN);
+
+    // NBT test
+    let mut nbt = NbtCompound::new();
+    brute_typed.save_additional(&mut nbt);
+    assert_eq!(nbt.int("TimeInOverworld"), Some(301));
+
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_borrowed_compound(&mut std::io::Cursor::new(&bytes)).unwrap();
+
+    let loaded_brute = PiglinBruteEntity::new(&vanilla_entities::PIGLIN_BRUTE, 102, DVec3::ZERO, std::sync::Arc::downgrade(&world));
+    loaded_brute.load_additional((&borrowed).into());
+    assert_eq!(loaded_brute.time_in_overworld(), 301);
+}

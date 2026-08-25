@@ -92,11 +92,13 @@ impl ZoglinEntity {
         }
     }
 
+    /// Returns whether this zoglin is a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
         *self.entity_data.lock().zoglin().baby.get()
     }
 
+    /// Sets whether this zoglin is a baby.
     pub fn set_baby(&self, baby: bool) {
         self.entity_data.lock().zoglin_mut().baby.set(baby);
     }
