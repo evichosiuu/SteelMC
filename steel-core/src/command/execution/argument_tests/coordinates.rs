@@ -1,4 +1,5 @@
 use super::*;
+use crate::command::execution::Angle;
 
 fn coordinate_dispatcher(argument_type: SteelArgumentType) -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();
@@ -71,6 +72,34 @@ fn block_position_requires_integers_only_for_absolute_components() {
 
     assert!(parsed_coordinates(&dispatcher, "coordinates 0.5 64 0").is_err());
     assert!(parsed_coordinates(&dispatcher, "coordinates ~0.5 64 ~").is_ok());
+}
+
+#[test]
+fn angle_argument_parses_absolute_and_relative_expressions() {
+    let mut dispatcher = TestDispatcher::new();
+    let command =
+        literal("angle").then(argument("value", SteelArgumentType::angle()).executes(|_| Ok(1)));
+    assert!(dispatcher.register(command).is_ok());
+
+    let parse = dispatcher.parse("angle 180", TestSource::new());
+    let chain = dispatcher.context_chain(parse).unwrap();
+    let angle = chain
+        .top_context()
+        .argument("value")
+        .unwrap()
+        .downcast_ref::<Angle>()
+        .unwrap();
+    assert_eq!(angle.angle(0.0), 180.0);
+
+    let parse = dispatcher.parse("angle ~90", TestSource::new());
+    let chain = dispatcher.context_chain(parse).unwrap();
+    let angle = chain
+        .top_context()
+        .argument("value")
+        .unwrap()
+        .downcast_ref::<Angle>()
+        .unwrap();
+    assert_eq!(angle.angle(45.0), 135.0);
 }
 
 #[test]
