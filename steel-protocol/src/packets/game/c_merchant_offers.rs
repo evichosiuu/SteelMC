@@ -22,7 +22,7 @@ pub struct ItemCost {
 
 impl ItemCost {
     #[must_use]
-    pub fn new(item: ItemRef, count: i32, components: DataComponentMatchers) -> Self {
+    pub const fn new(item: ItemRef, count: i32, components: DataComponentMatchers) -> Self {
         Self {
             item,
             count,

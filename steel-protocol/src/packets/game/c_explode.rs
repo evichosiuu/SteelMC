@@ -34,7 +34,7 @@ impl WriteTo for CExplode {
 impl CExplode {
     /// Creates a new explosion packet with a registry sound event reference.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         center: DVec3,
         knockback: Option<DVec3>,
         particle: ParticleData,
@@ -50,7 +50,7 @@ impl CExplode {
 
     /// Creates a new explosion packet with a sound event holder.
     #[must_use]
-    pub fn with_sound_holder(
+    pub const fn with_sound_holder(
         center: DVec3,
         knockback: Option<DVec3>,
         particle: ParticleData,
