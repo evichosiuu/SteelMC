@@ -87,7 +87,7 @@ pub struct CBossEvent {
 impl CBossEvent {
     /// Creates an `Add` boss event.
     #[must_use]
-    pub fn add(
+    pub const fn add(
         uuid: Uuid,
         title: TextComponent,
         health: f32,
@@ -109,7 +109,7 @@ impl CBossEvent {
 
     /// Creates a `Remove` boss event.
     #[must_use]
-    pub fn remove(uuid: Uuid) -> Self {
+    pub const fn remove(uuid: Uuid) -> Self {
         Self {
             uuid,
             action: BossEventAction::Remove,
@@ -118,7 +118,7 @@ impl CBossEvent {
 
     /// Creates an `UpdateHealth` boss event.
     #[must_use]
-    pub fn update_health(uuid: Uuid, health: f32) -> Self {
+    pub const fn update_health(uuid: Uuid, health: f32) -> Self {
         Self {
             uuid,
             action: BossEventAction::UpdateHealth { health },
@@ -127,7 +127,7 @@ impl CBossEvent {
 
     /// Creates an `UpdateTitle` boss event.
     #[must_use]
-    pub fn update_title(uuid: Uuid, title: TextComponent) -> Self {
+    pub const fn update_title(uuid: Uuid, title: TextComponent) -> Self {
         Self {
             uuid,
             action: BossEventAction::UpdateTitle { title },
@@ -136,7 +136,7 @@ impl CBossEvent {
 
     /// Creates an `UpdateStyle` boss event.
     #[must_use]
-    pub fn update_style(uuid: Uuid, color: BossBarColor, overlay: BossBarOverlay) -> Self {
+    pub const fn update_style(uuid: Uuid, color: BossBarColor, overlay: BossBarOverlay) -> Self {
         Self {
             uuid,
             action: BossEventAction::UpdateStyle { color, overlay },
@@ -145,7 +145,7 @@ impl CBossEvent {
 
     /// Creates an `UpdateFlags` boss event.
     #[must_use]
-    pub fn update_flags(uuid: Uuid, flags: u8) -> Self {
+    pub const fn update_flags(uuid: Uuid, flags: u8) -> Self {
         Self {
             uuid,
             action: BossEventAction::UpdateFlags { flags },

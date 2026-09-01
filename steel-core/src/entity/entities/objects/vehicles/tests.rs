@@ -399,7 +399,7 @@ fn minecart_moves_along_closed_curve_rail_loop() {
     minecart.push_impulse(DVec3::new(0.3, 0.0, 0.0));
 
     // Tick minecart multiple times around the loop and track visited positions
-    let mut visited_blocks = std::collections::HashSet::new();
+    let mut visited_blocks = rustc_hash::FxHashSet::default();
     for _ in 0..40 {
         minecart.tick();
         assert!(minecart.is_on_rails(), "minecart should stay on rails while traversing loop");
