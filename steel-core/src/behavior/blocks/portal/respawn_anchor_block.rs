@@ -11,27 +11,24 @@ use steel_registry::blocks::{
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_damage_types, vanilla_game_events, vanilla_items,
+};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{InteractionHand, UpdateFlags},
 };
 
-use crate::entity::dismount_helper;
-use crate::{
-    behavior::blocks::redstone::MAX_REDSTONE_SIGNAL,
-    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
-    entity::Entity,
-    level_data::RespawnData,
-    player::{Player, PlayerRespawnConfig},
-    world::{LevelReader, World, game_event::GameEventContext},
-};
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess};
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, dismount_helper};
+use crate::level_data::RespawnData;
+use crate::player::{Player, PlayerRespawnConfig};
+use crate::world::explosion::ExplosionBlockInteraction;
+use crate::world::{LevelReader, World, game_event::GameEventContext};
 
 /// Vanilla respawn anchor
-///
-/// TODO: Implement vanilla invalid-dimension explosion once Steel has a strict
-/// `World::explode` foundation, including block removal, water-sensitive
-/// explosion resistance, and bad-respawn-point explosion damage source.
 #[block_behavior]
 pub struct RespawnAnchorBlock {
     block: BlockRef,
@@ -235,8 +232,23 @@ impl BlockBehavior for RespawnAnchorBlock {
         }
 
         if !Self::can_set_spawn(world, pos) {
-            // TODO: Once `World::explode` exist remove the anchor and use the
-            // watersensitive bad respawn point explosion behavior
+            world.set_block(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+            let (cx, cy, cz) = pos.get_center();
+            let center = DVec3::new(cx, cy, cz);
+            let damage_source = DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+                .with_source_position(center);
+            world.explode(
+                None,
+                Some(damage_source),
+                center,
+                5.0,
+                true,
+                ExplosionBlockInteraction::Destroy,
+            );
             return InteractionResult::SuccessServer;
         }
 
@@ -391,5 +403,50 @@ mod tests {
             RespawnAnchorBlock::state_after_charge_consumed(vanilla_blocks::STONE.default_state())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn invalid_dimension_use_explodes_and_removes_anchor() {
+        use crate::bootstrap::init_globals_once;
+        use crate::player::player_inventory::PlayerInventory;
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+        use steel_utils::locks::SyncMutex;
+        use steel_utils::ChunkPos;
+
+        init_globals_once();
+        init_vanilla_registry();
+        let world = fresh_test_world("respawn_anchor_explode");
+        let pos = BlockPos::new(0, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let charged = vanilla_blocks::RESPAWN_ANCHOR
+            .default_state()
+            .set_value(CHARGES, 1);
+        world.set_block(pos, charged, UpdateFlags::UPDATE_ALL);
+
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "ExplodeTester", 1).build();
+        let behavior = RespawnAnchorBlock::new(&vanilla_blocks::RESPAWN_ANCHOR);
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
+        let mut inv = InventoryAccess::new(inventory, InteractionHand::MainHand);
+        let hit_result = BlockHitResult {
+            location: pos.0.as_dvec3(),
+            direction: Direction::Up,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+
+        let result = behavior.use_without_item(
+            charged,
+            &world,
+            pos,
+            &player,
+            &hit_result,
+            &mut inv,
+        );
+
+        assert_eq!(result, InteractionResult::SuccessServer);
+        assert_eq!(world.get_block_state(pos), vanilla_blocks::AIR.default_state());
     }
 }
