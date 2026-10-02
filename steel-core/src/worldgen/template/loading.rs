@@ -39,7 +39,7 @@ impl StructureTemplate {
         let mut loaded_palettes = Vec::with_capacity(palettes.len());
         for palette in &palettes {
             loaded_palettes.push(StructureTemplatePalette {
-                blocks: Self::read_blocks(registry, &blocks, palette, context)?,
+                blocks: Self::read_blocks(registry, blocks.clone(), palette, context)?,
             });
         }
 
@@ -90,7 +90,7 @@ impl StructureTemplate {
         context: &str,
     ) -> Result<Vec<Vec<BlockStateId>>, String> {
         if let Some(palette) = compound.list("palette").and_then(|list| list.compounds()) {
-            return Ok(vec![Self::read_palette(registry, &palette, context)?]);
+            return Ok(vec![Self::read_palette(registry, palette, context)?]);
         }
 
         let palettes = compound
@@ -110,18 +110,18 @@ impl StructureTemplate {
             let entries = palette.compounds().ok_or_else(|| {
                 format!("structure template {context} has non-compound palette entry")
             })?;
-            result.push(Self::read_palette(registry, &entries, context)?);
+            result.push(Self::read_palette(registry, entries, context)?);
         }
         Ok(result)
     }
 
     pub(super) fn read_palette(
         registry: &Registry,
-        entries: &BorrowedNbtCompoundList<'_, '_>,
+        entries: BorrowedNbtCompoundList<'_, '_>,
         context: &str,
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
-        for entry in entries.clone() {
+        for entry in entries {
             let Some(name) = entry.string("Name") else {
                 return Err(format!(
                     "structure template {context} has palette entry without Name"
@@ -153,7 +153,7 @@ impl StructureTemplate {
 
     pub(super) fn read_blocks(
         registry: &Registry,
-        blocks: &BorrowedNbtCompoundList<'_, '_>,
+        blocks: BorrowedNbtCompoundList<'_, '_>,
         palette: &[BlockStateId],
         context: &str,
     ) -> Result<Vec<StructureBlockInfo>, String> {
@@ -161,7 +161,7 @@ impl StructureTemplate {
         let mut other_blocks = Vec::new();
         let mut block_entities = Vec::new();
 
-        for block in blocks.clone() {
+        for block in blocks {
             let pos = Self::read_vec3(block.list("pos"), context, "block pos")?;
             let state_index = block
                 .int("state")
@@ -215,7 +215,7 @@ impl StructureTemplate {
         };
 
         let mut result = Vec::with_capacity(entities.len());
-        for entity in entities.clone() {
+        for entity in entities {
             let pos = Self::read_vec3d(entity.list("pos"), context, "entity pos")?;
             let block_pos = Self::read_vec3(entity.list("blockPos"), context, "entity blockPos")?;
             let entity_nbt = entity.compound("nbt").ok_or_else(|| {
