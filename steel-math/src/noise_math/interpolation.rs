@@ -247,7 +247,36 @@ mod lerp_tests {
         let val = lerp3(0.25, 0.5, 0.75, x000, x100, x010, x110, x001, x101, x011, x111);
         assert!((val - 5.25).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_lerp2() {
+        let x00 = 0.0;
+        let x10 = 10.0;
+        let x01 = 20.0;
+        let x11 = 30.0;
+
+        // Corners
+        assert!((lerp2(0.0, 0.0, x00, x10, x01, x11) - x00).abs() < 1e-10);
+        assert!((lerp2(1.0, 0.0, x00, x10, x01, x11) - x10).abs() < 1e-10);
+        assert!((lerp2(0.0, 1.0, x00, x10, x01, x11) - x01).abs() < 1e-10);
+        assert!((lerp2(1.0, 1.0, x00, x10, x01, x11) - x11).abs() < 1e-10);
+
+        // Midpoints / fractional factors
+        assert!((lerp2(0.5, 0.5, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
+        assert!((lerp2(0.25, 0.75, x00, x10, x01, x11) - 17.5).abs() < 1e-10);
+
+        // Signed / negative grid values
+        let nx00 = -10.0;
+        let nx10 = 10.0;
+        let nx01 = -20.0;
+        let nx11 = 20.0;
+        assert!((lerp2(0.5, 0.5, nx00, nx10, nx01, nx11) - 0.0).abs() < 1e-10);
+
+    // Extrapolation outside [0, 1]
+    assert!((lerp2(1.5, 0.0, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
 }
+}
+
 /// Map a value from one range to another (unclamped).
 ///
 /// Unlike [`map_clamped`], the result can extrapolate outside `[to_min, to_max]`.
@@ -257,6 +286,34 @@ mod lerp_tests {
 #[must_use]
 pub fn map(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
     lerp(inverse_lerp(value, from_min, from_max), to_min, to_max)
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    #[test]
+    fn test_map_in_range() {
+        // [0, 1] mapped to [10, 20]
+        assert!((map(0.0, 0.0, 1.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
+        assert!((map(1.0, 0.0, 1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
+        assert!((map(0.5, 0.0, 1.0, 10.0, 20.0) - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_map_inverted_range() {
+        // [0, 1] mapped to inverted target range [100, 0]
+        assert!((map(0.0, 0.0, 1.0, 100.0, 0.0) - 100.0).abs() < 1e-10);
+        assert!((map(1.0, 0.0, 1.0, 100.0, 0.0) - 0.0).abs() < 1e-10);
+        assert!((map(0.2, 0.0, 1.0, 100.0, 0.0) - 80.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_map_unclamped_extrapolation() {
+        // Values outside [from_min, from_max] extrapolate linearly
+        assert!((map(1.5, 0.0, 1.0, 10.0, 20.0) - 25.0).abs() < 1e-10);
+        assert!((map(-0.5, 0.0, 1.0, 10.0, 20.0) - 5.0).abs() < 1e-10);
+    }
 }
 
 /// Map a value from one range to another with clamped lerp.
@@ -317,5 +374,29 @@ mod smoothstep_tests {
         assert!((smoothstep(1.0) - 1.0).abs() < 1e-10);
         // At midpoint
         assert!((smoothstep(0.5) - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_smoothstep_derivative() {
+        // Key evaluation points
+        assert!((smoothstep_derivative(0.0) - 0.0).abs() < 1e-10);
+        assert!((smoothstep_derivative(1.0) - 0.0).abs() < 1e-10);
+        assert!((smoothstep_derivative(0.5) - 1.875).abs() < 1e-10);
+
+        // Symmetry property: S'(x) == S'(1.0 - x)
+        let x = 0.25;
+        assert!((smoothstep_derivative(x) - smoothstep_derivative(1.0 - x)).abs() < 1e-10);
+        assert!((smoothstep_derivative(x) - 1.054_687_5).abs() < 1e-10);
+
+        // Numerical derivative comparison using central finite differences
+        let h = 1e-6;
+        for &t in &[0.1, 0.3, 0.5, 0.7, 0.9] {
+            let numerical_derivative = (smoothstep(t + h) - smoothstep(t - h)) / (2.0 * h);
+            let analytical_derivative = smoothstep_derivative(t);
+            assert!(
+                (numerical_derivative - analytical_derivative).abs() < 1e-5,
+                "Mismatch at t = {t}: numerical = {numerical_derivative}, analytical = {analytical_derivative}"
+            );
+        }
     }
 }
