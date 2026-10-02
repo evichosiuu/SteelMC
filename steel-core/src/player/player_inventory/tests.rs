@@ -1204,6 +1204,23 @@ fn drained_items_return_without_player_inventory_slots() {
 }
 
 #[test]
+fn can_drop_items_checks_alive_and_not_removed() {
+    init_vanilla_registry();
+    let player = test_player(Arc::clone(test_world()));
+
+    assert!(player.can_drop_items());
+
+    player.set_health(0.0);
+    assert!(!player.can_drop_items());
+
+    player.set_health(20.0);
+    assert!(player.can_drop_items());
+
+    player.set_removed(RemovalReason::Killed);
+    assert!(!player.can_drop_items());
+}
+
+#[test]
 fn menu_item_return_policy_preserves_world_changes_only() {
     init_vanilla_registry();
     let connected = test_player(Arc::clone(test_world()));
