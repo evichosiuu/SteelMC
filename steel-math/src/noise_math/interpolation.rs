@@ -58,6 +58,57 @@ pub fn clamp(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
+#[cfg(test)]
+mod clamp_tests {
+    use super::*;
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "clamp returns exact input, min, or max float")]
+    fn test_clamp_below_min() {
+        assert_eq!(clamp(-5.0, 0.0, 10.0), 0.0);
+        assert_eq!(clamp(-100.0, -50.0, 50.0), -50.0);
+    }
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "clamp returns exact input, min, or max float")]
+    fn test_clamp_above_max() {
+        assert_eq!(clamp(15.0, 0.0, 10.0), 10.0);
+        assert_eq!(clamp(100.0, -50.0, 50.0), 50.0);
+    }
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "clamp returns exact input, min, or max float")]
+    fn test_clamp_within_range() {
+        assert_eq!(clamp(5.0, 0.0, 10.0), 5.0);
+        assert_eq!(clamp(0.0, -50.0, 50.0), 0.0);
+    }
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "clamp returns exact input, min, or max float")]
+    fn test_clamp_at_boundaries() {
+        assert_eq!(clamp(0.0, 0.0, 10.0), 0.0);
+        assert_eq!(clamp(10.0, 0.0, 10.0), 10.0);
+    }
+
+    #[test]
+    #[expect(clippy::float_cmp, reason = "clamp returns exact input, min, or max float")]
+    fn test_clamp_negative_range() {
+        assert_eq!(clamp(-15.0, -20.0, -10.0), -15.0);
+        assert_eq!(clamp(-25.0, -20.0, -10.0), -20.0);
+        assert_eq!(clamp(-5.0, -20.0, -10.0), -10.0);
+    }
+
+    #[test]
+    fn test_clamp_i32() {
+        assert_eq!(clamp_i32(-5, 0, 10), 0);
+        assert_eq!(clamp_i32(15, 0, 10), 10);
+        assert_eq!(clamp_i32(5, 0, 10), 5);
+        assert_eq!(clamp_i32(0, 0, 10), 0);
+        assert_eq!(clamp_i32(10, 0, 10), 10);
+    }
+}
+
+
 /// Clamp a value to the range [min, max] (i32 version).
 #[inline]
 #[must_use]
