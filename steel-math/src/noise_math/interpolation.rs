@@ -239,6 +239,7 @@ mod lerp_tests {
         assert!((lerp2(1.5, 0.0, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
     }
 }
+
 /// Map a value from one range to another (unclamped).
 ///
 /// Unlike [`map_clamped`], the result can extrapolate outside `[to_min, to_max]`.
@@ -248,6 +249,34 @@ mod lerp_tests {
 #[must_use]
 pub fn map(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
     lerp(inverse_lerp(value, from_min, from_max), to_min, to_max)
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    #[test]
+    fn test_map_in_range() {
+        // [0, 1] mapped to [10, 20]
+        assert!((map(0.0, 0.0, 1.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
+        assert!((map(1.0, 0.0, 1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
+        assert!((map(0.5, 0.0, 1.0, 10.0, 20.0) - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_map_inverted_range() {
+        // [0, 1] mapped to inverted target range [100, 0]
+        assert!((map(0.0, 0.0, 1.0, 100.0, 0.0) - 100.0).abs() < 1e-10);
+        assert!((map(1.0, 0.0, 1.0, 100.0, 0.0) - 0.0).abs() < 1e-10);
+        assert!((map(0.2, 0.0, 1.0, 100.0, 0.0) - 80.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_map_unclamped_extrapolation() {
+        // Values outside [from_min, from_max] extrapolate linearly
+        assert!((map(1.5, 0.0, 1.0, 10.0, 20.0) - 25.0).abs() < 1e-10);
+        assert!((map(-0.5, 0.0, 1.0, 10.0, 20.0) - 5.0).abs() < 1e-10);
+    }
 }
 
 /// Map a value from one range to another with clamped lerp.
