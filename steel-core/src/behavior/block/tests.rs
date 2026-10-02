@@ -167,3 +167,34 @@ fn world_aabb_bounds_contains_all_boxes() {
 
     assert_eq!(bounds, WorldAabb::new(-1.0, 2.0, 2.0, 2.0, 5.0, 6.0));
 }
+
+#[test]
+fn default_pickup_block_drains_waterlogged_block() {
+    use crate::behavior::init_behaviors;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("default_pickup_block_drains_waterlogged_block");
+    insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+
+    let pos = BlockPos::new(0, 64, 0);
+    let waterlogged_slab = vanilla_blocks::OAK_SLAB
+        .default_state()
+        .set_value(&BlockStateProperties::WATERLOGGED, true);
+    world.set_block(pos, waterlogged_slab, UpdateFlags::UPDATE_ALL);
+
+    let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
+    let result = behavior.pickup_block(&world, pos, waterlogged_slab, None);
+
+    assert!(result.is_some());
+    let result = result.unwrap();
+    assert!(result.filled_bucket.is(&vanilla_items::WATER_BUCKET));
+
+    let new_state = world.get_block_state(pos);
+    assert_eq!(
+        new_state.try_get_value(&BlockStateProperties::WATERLOGGED),
+        Some(false)
+    );
+}

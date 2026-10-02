@@ -12,7 +12,7 @@ pub(crate) fn drained_waterlogged_state(state: BlockStateId) -> Option<BlockStat
 }
 
 pub(crate) fn pickup_waterlogged_block(
-    behavior: &dyn BlockBehavior,
+    behavior: &(impl BlockBehavior + ?Sized),
     world: &Arc<World>,
     pos: BlockPos,
     state: BlockStateId,

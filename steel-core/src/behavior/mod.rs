@@ -68,7 +68,7 @@ pub use block::{
     BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
     EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
 };
-pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
+pub(crate) use block::try_drop_experience;
 use block_behaviors::register_block_behaviors;
 pub use context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
