@@ -43,7 +43,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 8;
+const PLAYER_STORAGE_VERSION: u16 = 9;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -100,6 +100,8 @@ struct PlayerDataFile {
     root_vehicle: Option<RootVehicleFile>,
     respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
+    shoulder_entity_left: Option<Vec<u8>>,
+    shoulder_entity_right: Option<Vec<u8>>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -651,6 +653,16 @@ impl PlayerDataFile {
                     entity: pearl.entity.clone(),
                 })
                 .collect(),
+            shoulder_entity_left: data.shoulder_entity_left.as_ref().map(|c| {
+                let mut bytes = Vec::new();
+                c.write(&mut bytes);
+                bytes
+            }),
+            shoulder_entity_right: data.shoulder_entity_right.as_ref().map(|c| {
+                let mut bytes = Vec::new();
+                c.write(&mut bytes);
+                bytes
+            }),
         })
     }
 
@@ -725,6 +737,18 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+            shoulder_entity_left: match self.shoulder_entity_left {
+                Some(bytes) if !bytes.is_empty() => read_borrowed_compound(&mut Cursor::new(&bytes))
+                    .ok()
+                    .map(|borrowed| simdnbt::borrow::NbtCompound::from(&borrowed).to_owned()),
+                _ => None,
+            },
+            shoulder_entity_right: match self.shoulder_entity_right {
+                Some(bytes) if !bytes.is_empty() => read_borrowed_compound(&mut Cursor::new(&bytes))
+                    .ok()
+                    .map(|borrowed| simdnbt::borrow::NbtCompound::from(&borrowed).to_owned()),
+                _ => None,
+            },
         })
     }
 }
@@ -912,6 +936,8 @@ mod tests {
             root_vehicle: None,
             respawn_config: None,
             ender_pearls: Vec::new(),
+            shoulder_entity_left: None,
+            shoulder_entity_right: None,
         }
     }
 

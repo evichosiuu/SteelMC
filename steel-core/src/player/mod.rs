@@ -257,6 +257,8 @@ pub struct Player {
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
+    /// Shoulder entities (left, right) stored as NBT compounds.
+    shoulder_entities: SyncMutex<(Option<NbtCompound>, Option<NbtCompound>)>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -438,6 +440,104 @@ impl Player {
         (start_pos, end_pos)
     }
 
+    /// Returns a copy of the NBT compound for the entity riding on the left shoulder.
+    #[must_use]
+    pub fn shoulder_entity_left(&self) -> Option<NbtCompound> {
+        self.shoulder_entities.lock().0.clone()
+    }
+
+    /// Returns a copy of the NBT compound for the entity riding on the right shoulder.
+    #[must_use]
+    pub fn shoulder_entity_right(&self) -> Option<NbtCompound> {
+        self.shoulder_entities.lock().1.clone()
+    }
+
+    /// Sets the NBT compound for the entity riding on the left shoulder and updates client entity data.
+    pub fn set_shoulder_entity_left(&self, compound: Option<NbtCompound>) {
+        let variant = extract_parrot_variant(&compound);
+        self.shoulder_entities.lock().0 = compound;
+        self.entity_data.lock().shoulder_parrot_left.set(variant);
+        self.sync_entity_data();
+    }
+
+    /// Sets the NBT compound for the entity riding on the right shoulder and updates client entity data.
+    pub fn set_shoulder_entity_right(&self, compound: Option<NbtCompound>) {
+        let variant = extract_parrot_variant(&compound);
+        self.shoulder_entities.lock().1 = compound;
+        self.entity_data.lock().shoulder_parrot_right.set(variant);
+        self.sync_entity_data();
+    }
+
+    /// Releases any entities riding on the player's shoulders into the world.
+    pub fn remove_entities_with_shoulder_riding(&self) {
+        let (left, right) = {
+            let mut guard = self.shoulder_entities.lock();
+            (guard.0.take(), guard.1.take())
+        };
+
+        if left.is_none() && right.is_none() {
+            return;
+        }
+
+        {
+            let mut entity_data = self.entity_data.lock();
+            entity_data.shoulder_parrot_left.set(None);
+            entity_data.shoulder_parrot_right.set(None);
+        }
+        self.sync_entity_data();
+
+        let world = self.get_world();
+        let pos = self.position();
+
+        for compound in [left, right].into_iter().flatten() {
+            self.spawn_shoulder_entity(&world, pos, compound);
+        }
+    }
+
+    fn spawn_shoulder_entity(&self, world: &Arc<World>, pos: DVec3, compound: NbtCompound) {
+        use std::io::Cursor;
+        use steel_registry::RegistryExt as _;
+
+        let mut bytes = Vec::new();
+        compound.write(&mut bytes);
+        let Ok(borrowed_nbt) = simdnbt::borrow::read_compound(&mut Cursor::new(&bytes)) else {
+            return;
+        };
+
+        let borrowed_view = simdnbt::borrow::NbtCompound::from(&borrowed_nbt);
+        let id_str = borrowed_view
+            .string("id")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "minecraft:parrot".to_string());
+
+        let key = if let Some((ns, path)) = id_str.split_once(':') {
+            Identifier::new(ns.to_owned(), path.to_owned())
+        } else {
+            Identifier::vanilla(id_str)
+        };
+
+        let entity_type = steel_registry::REGISTRY
+            .entity_types
+            .by_key(&key)
+            .unwrap_or(&vanilla_entities::PARROT);
+
+        let request = crate::entity::EntityLoadRequest {
+            entity_type,
+            position: pos,
+            uuid: Uuid::new_v4(),
+            velocity: DVec3::ZERO,
+            rotation: (self.rotation().0, 0.0),
+            fall_distance: 0.0,
+            fire_freeze: crate::entity::EntityFireFreezeState::new(),
+            on_ground: true,
+            save_data: crate::entity::EntityBaseSaveData::new(),
+            world: Arc::downgrade(world),
+        };
+
+        let entity = crate::entity::ENTITIES.create_and_load_or_raw(request, &borrowed_nbt);
+        let _ = world.try_add_entity(entity);
+    }
+
     /// Returns the player's current game mode.
     #[must_use]
     pub fn game_mode(&self) -> GameType {
@@ -536,6 +636,7 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            shoulder_entities: SyncMutex::new((None, None)),
         }
     }
 
@@ -763,7 +864,8 @@ impl Player {
             }
         }
 
-        // TODO: reset player noActionTime and remove shoulder entities.
+        // TODO: reset player noActionTime
+        self.remove_entities_with_shoulder_riding();
         if self.get_health() <= 0.0 {
             return false;
         }
@@ -839,6 +941,7 @@ impl Player {
             return;
         }
 
+        self.remove_entities_with_shoulder_riding();
         self.game_event(&vanilla_game_events::ENTITY_DIE);
 
         self.sync_entity_data();
@@ -1164,6 +1267,13 @@ impl Player {
             .collect::<Vec<_>>();
         if !ender_pearls.is_empty() {
             nbt.insert("ender_pearls", NbtList::Compound(ender_pearls));
+        }
+
+        if let Some(left) = self.shoulder_entity_left() {
+            nbt.insert("ShoulderEntityLeft", NbtTag::Compound(left));
+        }
+        if let Some(right) = self.shoulder_entity_right() {
+            nbt.insert("ShoulderEntityRight", NbtTag::Compound(right));
         }
     }
 
@@ -1562,6 +1672,23 @@ impl Entity for Player {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
         Player::hurt(self, world, source, amount)
+    }
+}
+
+fn extract_parrot_variant(compound: &Option<NbtCompound>) -> Option<u32> {
+    let compound = compound.as_ref()?;
+    let mut bytes = Vec::new();
+    compound.write(&mut bytes);
+    let Ok(borrowed) = simdnbt::borrow::read_compound(&mut std::io::Cursor::new(&bytes)) else {
+        return Some(0);
+    };
+    let borrowed = simdnbt::borrow::NbtCompound::from(&borrowed);
+    if let Some(variant) = borrowed.int("Variant") {
+        Some(variant as u32)
+    } else if let Some(variant) = borrowed.byte("Variant") {
+        Some(variant as u32)
+    } else {
+        Some(0)
     }
 }
 

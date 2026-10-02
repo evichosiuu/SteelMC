@@ -37,7 +37,9 @@ impl Player {
 
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.server().broadcast_to_online(update_packet);
+        if let Some(server) = self.server.upgrade() {
+            server.broadcast_to_online(update_packet);
+        }
 
         self.get_world().update_sleeping_player_list();
 
@@ -52,7 +54,7 @@ impl Player {
 
         if gamemode == GameType::Spectator {
             self.stop_riding();
-            // TODO: Remove shoulder entities once player shoulder storage is implemented.
+            self.remove_entities_with_shoulder_riding();
             // TODO: Stop item use once living item-use state is implemented.
             // TODO: Stop location-based enchantment effects once those effects are implemented.
         } else if was_spectator {
