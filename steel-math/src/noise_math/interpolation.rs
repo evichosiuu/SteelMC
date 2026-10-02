@@ -212,6 +212,43 @@ mod lerp_tests {
     }
 
     #[test]
+    fn test_lerp3() {
+        let x000 = 1.0;
+        let x100 = 2.0;
+        let x010 = 3.0;
+        let x110 = 4.0;
+        let x001 = 5.0;
+        let x101 = 6.0;
+        let x011 = 7.0;
+        let x111 = 8.0;
+
+        // Test all 8 corners
+        assert!((lerp3(0.0, 0.0, 0.0, x000, x100, x010, x110, x001, x101, x011, x111) - x000).abs() < 1e-10);
+        assert!((lerp3(1.0, 0.0, 0.0, x000, x100, x010, x110, x001, x101, x011, x111) - x100).abs() < 1e-10);
+        assert!((lerp3(0.0, 1.0, 0.0, x000, x100, x010, x110, x001, x101, x011, x111) - x010).abs() < 1e-10);
+        assert!((lerp3(1.0, 1.0, 0.0, x000, x100, x010, x110, x001, x101, x011, x111) - x110).abs() < 1e-10);
+        assert!((lerp3(0.0, 0.0, 1.0, x000, x100, x010, x110, x001, x101, x011, x111) - x001).abs() < 1e-10);
+        assert!((lerp3(1.0, 0.0, 1.0, x000, x100, x010, x110, x001, x101, x011, x111) - x101).abs() < 1e-10);
+        assert!((lerp3(0.0, 1.0, 1.0, x000, x100, x010, x110, x001, x101, x011, x111) - x011).abs() < 1e-10);
+        assert!((lerp3(1.0, 1.0, 1.0, x000, x100, x010, x110, x001, x101, x011, x111) - x111).abs() < 1e-10);
+
+        // Test center (0.5, 0.5, 0.5) which should be average of all 8 corners
+        let avg = (x000 + x100 + x010 + x110 + x001 + x101 + x011 + x111) / 8.0;
+        assert!((lerp3(0.5, 0.5, 0.5, x000, x100, x010, x110, x001, x101, x011, x111) - avg).abs() < 1e-10);
+
+        // Test intermediate point
+        // lerp(a1, x000, x100) = lerp(0.25, 1, 2) = 1.25
+        // lerp(a1, x010, x110) = lerp(0.25, 3, 4) = 3.25
+        // lerp2(0.25, 0.5, z0) = lerp(0.5, 1.25, 3.25) = 2.25
+        // lerp(a1, x001, x101) = lerp(0.25, 5, 6) = 5.25
+        // lerp(a1, x011, x111) = lerp(0.25, 7, 8) = 7.25
+        // lerp2(0.25, 0.5, z1) = lerp(0.5, 5.25, 7.25) = 6.25
+        // lerp(0.75, 2.25, 6.25) = 2.25 + 0.75 * 4 = 5.25
+        let val = lerp3(0.25, 0.5, 0.75, x000, x100, x010, x110, x001, x101, x011, x111);
+        assert!((val - 5.25).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_lerp2() {
         let x00 = 0.0;
         let x10 = 10.0;
@@ -235,9 +272,9 @@ mod lerp_tests {
         let nx11 = 20.0;
         assert!((lerp2(0.5, 0.5, nx00, nx10, nx01, nx11) - 0.0).abs() < 1e-10);
 
-        // Extrapolation outside [0, 1]
-        assert!((lerp2(1.5, 0.0, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
-    }
+    // Extrapolation outside [0, 1]
+    assert!((lerp2(1.5, 0.0, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
+}
 }
 
 /// Map a value from one range to another (unclamped).
