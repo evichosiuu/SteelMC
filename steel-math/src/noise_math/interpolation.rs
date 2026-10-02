@@ -203,12 +203,148 @@ where
 #[cfg(test)]
 mod lerp_tests {
     use super::*;
+    use std::simd::{f32x4, f64x4};
 
     #[test]
     fn test_lerp() {
         assert!((lerp(0.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
         assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
         assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lerp_simd() {
+        // Boundary and midpoint tests for f64x4
+        let alpha = f64x4::from_array([0.0, 0.5, 1.0, 1.5]);
+        let a = f64x4::splat(10.0);
+        let b = f64x4::splat(20.0);
+        let res = lerp_simd(alpha, a, b).to_array();
+
+        assert!((res[0] - 10.0).abs() < 1e-10);
+        assert!((res[1] - 15.0).abs() < 1e-10);
+        assert!((res[2] - 20.0).abs() < 1e-10);
+        assert!((res[3] - 25.0).abs() < 1e-10);
+
+        // Per-lane scalar comparison for f64x4
+        let alphas_f64 = [0.0, 0.25, 0.75, -0.5];
+        let as_f64 = [0.0, 10.0, -5.0, 100.0];
+        let bs_f64 = [100.0, 20.0, 15.0, 200.0];
+
+        let sim_res = lerp_simd(
+            f64x4::from_array(alphas_f64),
+            f64x4::from_array(as_f64),
+            f64x4::from_array(bs_f64),
+        )
+        .to_array();
+
+        for i in 0..4 {
+            let expected = lerp(alphas_f64[i], as_f64[i], bs_f64[i]);
+            assert!(
+                (sim_res[i] - expected).abs() < 1e-10,
+                "Mismatch at lane {i}: got {}, expected {}",
+                sim_res[i],
+                expected
+            );
+        }
+
+        // Per-lane test for f32x4
+        let alphas_f32 = [0.0f32, 0.5f32, 1.0f32, 0.2f32];
+        let as_f32 = [1.0f32, 2.0f32, 3.0f32, 4.0f32];
+        let bs_f32 = [10.0f32, 20.0f32, 30.0f32, 40.0f32];
+
+        let sim_res_f32 = lerp_simd(
+            f32x4::from_array(alphas_f32),
+            f32x4::from_array(as_f32),
+            f32x4::from_array(bs_f32),
+        )
+        .to_array();
+
+        for i in 0..4 {
+            let expected = as_f32[i] + alphas_f32[i] * (bs_f32[i] - as_f32[i]);
+            assert!(
+                (sim_res_f32[i] - expected).abs() < 1e-5,
+                "f32 mismatch at lane {i}: got {}, expected {}",
+                sim_res_f32[i],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_clamped_lerp_simd() {
+        let mins = [10.0, 10.0, 10.0, 10.0];
+        let maxs = [20.0, 20.0, 20.0, 20.0];
+        let factors = [-0.5, 0.0, 0.5, 1.5];
+
+        let sim_res = clamped_lerp_simd(
+            f64x4::from_array(mins),
+            f64x4::from_array(maxs),
+            f64x4::from_array(factors),
+        )
+        .to_array();
+
+        for i in 0..4 {
+            let expected = clamped_lerp(mins[i], maxs[i], factors[i]);
+            assert_eq!(sim_res[i], expected, "Mismatch at lane {i}");
+        }
+    }
+
+    #[test]
+    fn test_lerp2_simd() {
+        let a1 = f64x4::from_array([0.0, 0.5, 1.0, 0.2]);
+        let a2 = f64x4::from_array([0.0, 0.5, 1.0, 0.8]);
+        let x00 = f64x4::splat(0.0);
+        let x10 = f64x4::splat(10.0);
+        let x01 = f64x4::splat(20.0);
+        let x11 = f64x4::splat(30.0);
+
+        let res = lerp2_simd(a1, a2, x00, x10, x01, x11).to_array();
+
+        for i in 0..4 {
+            let expected = lerp2(
+                a1.to_array()[i],
+                a2.to_array()[i],
+                x00.to_array()[i],
+                x10.to_array()[i],
+                x01.to_array()[i],
+                x11.to_array()[i],
+            );
+            assert!((res[i] - expected).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_lerp3_simd() {
+        let a1 = f64x4::from_array([0.0, 0.5, 1.0, 0.3]);
+        let a2 = f64x4::from_array([0.0, 0.5, 1.0, 0.6]);
+        let a3 = f64x4::from_array([0.0, 0.5, 1.0, 0.9]);
+        let x000 = f64x4::splat(0.0);
+        let x100 = f64x4::splat(10.0);
+        let x010 = f64x4::splat(20.0);
+        let x110 = f64x4::splat(30.0);
+        let x001 = f64x4::splat(40.0);
+        let x101 = f64x4::splat(50.0);
+        let x011 = f64x4::splat(60.0);
+        let x111 = f64x4::splat(70.0);
+
+        let res = lerp3_simd(a1, a2, a3, x000, x100, x010, x110, x001, x101, x011, x111).to_array();
+
+        for i in 0..4 {
+            let expected = lerp3(
+                a1.to_array()[i],
+                a2.to_array()[i],
+                a3.to_array()[i],
+                x000.to_array()[i],
+                x100.to_array()[i],
+                x010.to_array()[i],
+                x110.to_array()[i],
+                x001.to_array()[i],
+                x101.to_array()[i],
+                x011.to_array()[i],
+                x111.to_array()[i],
+            );
+            assert!((res[i] - expected).abs() < 1e-10);
+        }
     }
 }
 /// Map a value from one range to another (unclamped).
@@ -273,6 +409,8 @@ where
 #[cfg(test)]
 mod smoothstep_tests {
     use super::*;
+    use std::simd::f64x4;
+
     #[test]
     fn test_smoothstep() {
         // At boundaries
@@ -280,5 +418,21 @@ mod smoothstep_tests {
         assert!((smoothstep(1.0) - 1.0).abs() < 1e-10);
         // At midpoint
         assert!((smoothstep(0.5) - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_smoothstep_simd() {
+        let input = f64x4::from_array([0.0, 0.5, 1.0, 0.25]);
+        let res = smoothstep_simd(input).to_array();
+
+        for i in 0..4 {
+            let expected = smoothstep(input.to_array()[i]);
+            assert!(
+                (res[i] - expected).abs() < 1e-10,
+                "Mismatch at lane {i}: got {}, expected {}",
+                res[i],
+                expected
+            );
+        }
     }
 }
