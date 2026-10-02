@@ -210,6 +210,34 @@ mod lerp_tests {
         assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
         assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_lerp2() {
+        let x00 = 0.0;
+        let x10 = 10.0;
+        let x01 = 20.0;
+        let x11 = 30.0;
+
+        // Corners
+        assert!((lerp2(0.0, 0.0, x00, x10, x01, x11) - x00).abs() < 1e-10);
+        assert!((lerp2(1.0, 0.0, x00, x10, x01, x11) - x10).abs() < 1e-10);
+        assert!((lerp2(0.0, 1.0, x00, x10, x01, x11) - x01).abs() < 1e-10);
+        assert!((lerp2(1.0, 1.0, x00, x10, x01, x11) - x11).abs() < 1e-10);
+
+        // Midpoints / fractional factors
+        assert!((lerp2(0.5, 0.5, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
+        assert!((lerp2(0.25, 0.75, x00, x10, x01, x11) - 17.5).abs() < 1e-10);
+
+        // Signed / negative grid values
+        let nx00 = -10.0;
+        let nx10 = 10.0;
+        let nx01 = -20.0;
+        let nx11 = 20.0;
+        assert!((lerp2(0.5, 0.5, nx00, nx10, nx01, nx11) - 0.0).abs() < 1e-10);
+
+        // Extrapolation outside [0, 1]
+        assert!((lerp2(1.5, 0.0, x00, x10, x01, x11) - 15.0).abs() < 1e-10);
+    }
 }
 /// Map a value from one range to another (unclamped).
 ///
