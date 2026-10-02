@@ -281,4 +281,28 @@ mod smoothstep_tests {
         // At midpoint
         assert!((smoothstep(0.5) - 0.5).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_smoothstep_derivative() {
+        // Key evaluation points
+        assert!((smoothstep_derivative(0.0) - 0.0).abs() < 1e-10);
+        assert!((smoothstep_derivative(1.0) - 0.0).abs() < 1e-10);
+        assert!((smoothstep_derivative(0.5) - 1.875).abs() < 1e-10);
+
+        // Symmetry property: S'(x) == S'(1.0 - x)
+        let x = 0.25;
+        assert!((smoothstep_derivative(x) - smoothstep_derivative(1.0 - x)).abs() < 1e-10);
+        assert!((smoothstep_derivative(x) - 1.054_687_5).abs() < 1e-10);
+
+        // Numerical derivative comparison using central finite differences
+        let h = 1e-6;
+        for &t in &[0.1, 0.3, 0.5, 0.7, 0.9] {
+            let numerical_derivative = (smoothstep(t + h) - smoothstep(t - h)) / (2.0 * h);
+            let analytical_derivative = smoothstep_derivative(t);
+            assert!(
+                (numerical_derivative - analytical_derivative).abs() < 1e-5,
+                "Mismatch at t = {t}: numerical = {numerical_derivative}, analytical = {analytical_derivative}"
+            );
+        }
+    }
 }
