@@ -9,7 +9,6 @@ use crate::behavior::context::InteractionResult;
 use crate::behavior::item_utils::create_filled_result;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
-    pickup_waterlogged_block,
 };
 use crate::fluid::FluidStateExt;
 use crate::world::RaytraceAction;
@@ -210,30 +209,6 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         }
 
         // Give filled bucket
-        create_filled_result(context, result.filled_bucket, true);
-        context.world.game_event(
-            &vanilla_game_events::FLUID_PICKUP,
-            hit_pos,
-            &GameEventContext::new(Some(context.player), None),
-        );
-
-        return InteractionResult::Success;
-    }
-
-    // TODO: Remove fallback once all waterloggable blocks implement pickup_block.
-    if let Some(result) = pickup_waterlogged_block(
-        block_behavior,
-        context.world,
-        hit_pos,
-        hit_state,
-        Some(context.player),
-    ) {
-        if let Some(sound) = result.sound {
-            context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
-        }
-
         create_filled_result(context, result.filled_bucket, true);
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
@@ -623,5 +598,55 @@ mod tests {
         let inv = player.inventory.lock();
         let in_hand = inv.get_item_in_hand(InteractionHand::MainHand);
         assert!(in_hand.is(&vanilla_items::MILK_BUCKET));
+    }
+
+    #[test]
+    fn empty_bucket_picks_up_waterlogged_block() {
+        use steel_registry::blocks::properties::BlockStateProperties;
+
+        init_vanilla_registry();
+        init_behaviors();
+
+        let world = fresh_test_world("empty_bucket_picks_up_waterlogged_block");
+        insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(0, 0));
+
+        let pos = BlockPos::new(0, 64, 0);
+        let waterlogged_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        world.set_block(pos, waterlogged_slab, UpdateFlags::UPDATE_ALL);
+
+        let player = TestPlayerBuilder::new(world.clone(), "player", 1).build();
+        let _ = player.try_set_position(DVec3::new(0.5, 65.0, 0.5));
+        player.set_rotation((0.0, 90.0));
+
+        player.inventory.lock().set_item_in_hand(
+            InteractionHand::MainHand,
+            ItemStack::new(&vanilla_items::BUCKET),
+        );
+
+        let inv_access = crate::behavior::InventoryAccess::new(
+            player.inventory.clone(),
+            InteractionHand::MainHand,
+        );
+        let mut context = UseItemContext {
+            world: &world,
+            player: &player,
+            hand: InteractionHand::MainHand,
+            inv: inv_access,
+        };
+
+        let result = use_empty_bucket(&mut context);
+        assert_eq!(result, InteractionResult::Success);
+
+        let new_state = world.get_block_state(pos);
+        assert_eq!(
+            new_state.try_get_value(&BlockStateProperties::WATERLOGGED),
+            Some(false)
+        );
+
+        let inv = player.inventory.lock();
+        let in_hand = inv.get_item_in_hand(InteractionHand::MainHand);
+        assert!(in_hand.is(&vanilla_items::WATER_BUCKET));
     }
 }

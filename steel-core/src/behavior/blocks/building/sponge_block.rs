@@ -13,7 +13,7 @@ use steel_utils::{
 };
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, pickup_waterlogged_block,
+    BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext,
 };
 use crate::world::{ConditionalBlockSetResult, World};
 
@@ -82,10 +82,6 @@ impl SpongeBlock {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         if behavior.pickup_block(world, pos, state, None).is_some() {
-            return true;
-        }
-
-        if pickup_waterlogged_block(behavior, world, pos, state, None).is_some() {
             return true;
         }
 
