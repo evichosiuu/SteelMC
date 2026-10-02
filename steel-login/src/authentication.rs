@@ -187,6 +187,40 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_carry_propagation() {
+        // BigInteger([0xff, 0xff, 0xff]).toString(16) = "-1"
+        assert_eq!(signed_bytes_be_to_hex(&[0xff, 0xff, 0xff]), "-1");
+        // BigInteger([0xff, 0x00]).toString(16) = "-100"
+        assert_eq!(signed_bytes_be_to_hex(&[0xff, 0x00]), "-100");
+        // BigInteger([0x80, 0x00, 0x00]).toString(16) = "-800000"
+        assert_eq!(signed_bytes_be_to_hex(&[0x80, 0x00, 0x00]), "-800000");
+    }
+
+    #[test]
+    fn test_negative_leading_zero_trimming() {
+        // BigInteger([0xff, 0xfe]).toString(16) = "-2"
+        assert_eq!(signed_bytes_be_to_hex(&[0xff, 0xfe]), "-2");
+    }
+
+    #[test]
+    fn test_multiple_leading_zeros_positive() {
+        // BigInteger([0x00, 0x00, 0x01, 0x00]).toString(16) = "100"
+        assert_eq!(signed_bytes_be_to_hex(&[0x00, 0x00, 0x01, 0x00]), "100");
+    }
+
+    #[test]
+    fn test_signed_boundaries() {
+        // i8::MAX = 127 = 0x7f -> "7f"
+        assert_eq!(signed_bytes_be_to_hex(&[0x7f]), "7f");
+        // i8::MIN = -128 = 0x80 -> "-80"
+        assert_eq!(signed_bytes_be_to_hex(&[0x80]), "-80");
+        // i16::MAX = 32767 = 0x7fff -> "7fff"
+        assert_eq!(signed_bytes_be_to_hex(&[0x7f, 0xff]), "7fff");
+        // i16::MIN = -32768 = 0x8000 -> "-8000"
+        assert_eq!(signed_bytes_be_to_hex(&[0x80, 0x00]), "-8000");
+    }
+
+    #[test]
     fn test_zero() {
         assert_eq!(signed_bytes_be_to_hex(&[0x00]), "0");
         assert_eq!(signed_bytes_be_to_hex(&[0x00, 0x00, 0x00]), "0");
