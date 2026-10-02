@@ -763,7 +763,8 @@ impl Player {
             }
         }
 
-        // TODO: reset player noActionTime and remove shoulder entities.
+        self.set_no_action_time(0);
+        self.remove_entities_on_shoulder();
         if self.get_health() <= 0.0 {
             return false;
         }
@@ -1195,6 +1196,11 @@ impl Player {
     /// Sets vanilla `Player.takeXpDelay`.
     pub(crate) fn set_take_xp_delay(&self, delay: i32) {
         self.tick_state.lock().set_take_xp_delay(delay);
+    }
+
+    /// Removes parrot shoulder entities from the player and spawns them into the world.
+    pub fn remove_entities_on_shoulder(&self) {
+        // TODO: Spawn shoulder entities once player shoulder entity NBT storage is implemented.
     }
 
     fn primary_step_sound_block_pos(&self, affecting_pos: BlockPos) -> BlockPos {
