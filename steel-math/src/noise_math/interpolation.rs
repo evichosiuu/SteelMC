@@ -203,12 +203,66 @@ where
 #[cfg(test)]
 mod lerp_tests {
     use super::*;
+    use std::simd::f64x4;
 
     #[test]
     fn test_lerp() {
         assert!((lerp(0.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
         assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
         assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_clamped_lerp() {
+        // Below 0 clamps to min
+        assert_eq!(clamped_lerp(10.0, 20.0, -0.5), 10.0);
+        assert_eq!(clamped_lerp(10.0, 20.0, -100.0), 10.0);
+
+        // At boundaries
+        assert_eq!(clamped_lerp(10.0, 20.0, 0.0), 10.0);
+        assert_eq!(clamped_lerp(10.0, 20.0, 1.0), 20.0);
+
+        // In range [0, 1]
+        assert!((clamped_lerp(10.0, 20.0, 0.5) - 15.0).abs() < 1e-10);
+        assert!((clamped_lerp(10.0, 20.0, 0.25) - 12.5).abs() < 1e-10);
+
+        // Above 1 clamps to max
+        assert_eq!(clamped_lerp(10.0, 20.0, 1.5), 20.0);
+        assert_eq!(clamped_lerp(10.0, 20.0, 100.0), 20.0);
+
+        // Inverted min/max
+        assert_eq!(clamped_lerp(20.0, 10.0, -0.5), 20.0);
+        assert_eq!(clamped_lerp(20.0, 10.0, 1.5), 10.0);
+    }
+
+    #[test]
+    fn test_clamped_lerp_simd_matches_scalar() {
+        let cases = [
+            // min, max, factors (<0, ==0, in-range, >1)
+            ([10.0, 10.0, 10.0, 10.0], [20.0, 20.0, 20.0, 20.0], [-0.5, 0.0, 0.5, 1.5]),
+            ([10.0, 10.0, 10.0, 10.0], [20.0, 20.0, 20.0, 20.0], [-100.0, 0.25, 1.0, 100.0]),
+            ([20.0, 20.0, 20.0, 20.0], [10.0, 10.0, 10.0, 10.0], [-0.5, 0.5, 1.0, 1.5]),
+            ([-5.0, 0.0, 5.0, 10.0], [5.0, 10.0, 15.0, 20.0], [-1.0, 0.5, 0.75, 2.0]),
+        ];
+
+        for (min_arr, max_arr, factor_arr) in cases {
+            let min_simd = f64x4::from_array(min_arr);
+            let max_simd = f64x4::from_array(max_arr);
+            let factor_simd = f64x4::from_array(factor_arr);
+
+            let result_simd = clamped_lerp_simd(min_simd, max_simd, factor_simd).to_array();
+
+            for i in 0..4 {
+                let expected = clamped_lerp(min_arr[i], max_arr[i], factor_arr[i]);
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "SIMD clamped_lerp must be bit-identical to scalar clamped_lerp per lane"
+                )]
+                {
+                    assert_eq!(result_simd[i], expected);
+                }
+            }
+        }
     }
 }
 /// Map a value from one range to another (unclamped).
