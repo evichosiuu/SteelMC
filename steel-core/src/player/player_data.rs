@@ -116,6 +116,12 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// Vanilla shoulder entity NBT compound for left shoulder.
+    pub shoulder_entity_left: Option<simdnbt::owned::NbtCompound>,
+
+    /// Vanilla shoulder entity NBT compound for right shoulder.
+    pub shoulder_entity_right: Option<simdnbt::owned::NbtCompound>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -245,6 +251,8 @@ impl PersistentPlayerData {
             respawn_config: player.respawn_config(),
 
             ender_pearls,
+            shoulder_entity_left: player.shoulder_entity_left(),
+            shoulder_entity_right: player.shoulder_entity_right(),
         }
     }
 
@@ -307,6 +315,8 @@ impl Player {
 
         self.set_score(0);
         self.set_seen_credits(false);
+        self.set_shoulder_entity_left(None);
+        self.set_shoulder_entity_right(None);
     }
 }
 
@@ -450,5 +460,7 @@ impl PersistentPlayerData {
         }
         player.set_score(self.score);
         player.set_seen_credits(self.seen_credits);
+        player.set_shoulder_entity_left(self.shoulder_entity_left.clone());
+        player.set_shoulder_entity_right(self.shoulder_entity_right.clone());
     }
 }

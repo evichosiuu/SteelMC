@@ -1,5 +1,6 @@
 use std::io::Cursor;
 use std::sync::Arc;
+use simdnbt::owned::NbtCompound;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glam::DVec3;
@@ -1194,6 +1195,124 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
     player.living_base.mark_effects_dirty();
     player.update_dirty_mob_effect_entity_data();
     assert!(!player.entity_data.is_base_invisible_flag());
+}
+
+#[test]
+fn shoulder_entity_set_and_get_updates_synced_entity_data() {
+    init_vanilla_registry();
+    let world = Arc::clone(test_world());
+    let player = test_player(world);
+
+    let mut parrot = NbtCompound::new();
+    parrot.insert("id", "minecraft:parrot");
+    parrot.insert("Variant", 2);
+
+    player.set_shoulder_entity_left(Some(parrot.clone()));
+    assert!(player.shoulder_entity_left().is_some());
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_left.get(), Some(2));
+
+    player.set_shoulder_entity_right(Some(parrot.clone()));
+    assert!(player.shoulder_entity_right().is_some());
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_right.get(), Some(2));
+
+    player.set_shoulder_entity_left(None);
+    assert!(player.shoulder_entity_left().is_none());
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_left.get(), None);
+}
+
+#[test]
+fn remove_entities_with_shoulder_riding_spawns_entities_and_clears_storage() {
+    init_vanilla_registry();
+    crate::entity::init_entities();
+    let world = fresh_test_world("shoulder_removal_test");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+    player.base.set_position_local(DVec3::new(1.0, 64.0, 1.0));
+
+    let mut parrot = NbtCompound::new();
+    parrot.insert("id", "minecraft:parrot");
+    parrot.insert("Variant", 1);
+
+    player.set_shoulder_entity_left(Some(parrot.clone()));
+    player.set_shoulder_entity_right(Some(parrot));
+
+    player.remove_entities_with_shoulder_riding();
+
+    assert!(player.shoulder_entity_left().is_none());
+    assert!(player.shoulder_entity_right().is_none());
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_left.get(), None);
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_right.get(), None);
+
+    let spawned = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-5.0, 50.0, -5.0, 5.0, 80.0, 5.0),
+        |entity| entity.entity_type() == &vanilla_entities::PARROT,
+    );
+    assert_eq!(spawned.len(), 2);
+}
+
+#[test]
+fn game_mode_spectator_change_removes_shoulder_entities() {
+    init_vanilla_registry();
+    crate::entity::init_entities();
+    let world = fresh_test_world("spectator_shoulder_removal_test");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    let mut parrot = NbtCompound::new();
+    parrot.insert("id", "minecraft:parrot");
+    player.set_shoulder_entity_left(Some(parrot));
+
+    player.set_game_mode(GameType::Spectator);
+
+    assert!(player.shoulder_entity_left().is_none());
+    let spawned = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-5.0, -50.0, -5.0, 5.0, 80.0, 5.0),
+        |entity| entity.entity_type() == &vanilla_entities::PARROT,
+    );
+    assert_eq!(spawned.len(), 1);
+}
+
+#[test]
+fn hurt_removes_shoulder_entities() {
+    init_vanilla_registry();
+    crate::entity::init_entities();
+    let world = fresh_test_world("hurt_shoulder_removal_test");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    let mut parrot = NbtCompound::new();
+    parrot.insert("id", "minecraft:parrot");
+    player.set_shoulder_entity_left(Some(parrot));
+
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+    assert!(player.hurt(&world, &source, 2.0));
+
+    assert!(player.shoulder_entity_left().is_none());
+    let spawned = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-5.0, -50.0, -5.0, 5.0, 80.0, 5.0),
+        |entity| entity.entity_type() == &vanilla_entities::PARROT,
+    );
+    assert_eq!(spawned.len(), 1);
+}
+
+#[test]
+fn persistent_player_data_roundtrip_preserves_shoulder_entities() {
+    init_vanilla_registry();
+    let player = test_player(Arc::clone(test_world()));
+
+    let mut left_parrot = NbtCompound::new();
+    left_parrot.insert("id", "minecraft:parrot");
+    left_parrot.insert("Variant", 3);
+
+    player.set_shoulder_entity_left(Some(left_parrot));
+    let persistent = PersistentPlayerData::from_player(&player);
+
+    player.set_shoulder_entity_left(None);
+    assert!(player.shoulder_entity_left().is_none());
+
+    persistent.apply_to_player_without_location(&player);
+    assert!(player.shoulder_entity_left().is_some());
+    assert_eq!(*player.entity_data.lock().shoulder_parrot_left.get(), Some(3));
 }
 
 #[test]
