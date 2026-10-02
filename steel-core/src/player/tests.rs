@@ -745,6 +745,18 @@ fn hurt_uses_explicit_world_difficulty() {
 }
 
 #[test]
+fn hurt_resets_no_action_time() {
+    init_vanilla_registry();
+    let world = Arc::clone(test_world());
+    let player = test_player(Arc::clone(&world));
+    player.set_no_action_time(100);
+    let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+    assert!(player.hurt(&world, &source, 1.0));
+    assert_eq!(player.no_action_time(), 0);
+}
+
+#[test]
 fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
     let world = hard_damage_test_world();
     let causing_player = test_player(Arc::clone(world));
