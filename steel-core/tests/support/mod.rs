@@ -6,6 +6,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::{
     init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
 };
@@ -45,6 +46,17 @@ pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {
 
 pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str) -> Arc<World> {
     create_test_world_with_key(Identifier::new_static(domain, key), Difficulty::Normal)
+}
+
+pub(crate) fn fresh_test_world_in_dimension(
+    key: &'static str,
+    dimension_type: DimensionTypeRef,
+) -> Arc<World> {
+    create_test_world_with_key_and_dimension(
+        Identifier::vanilla_static(key),
+        Difficulty::Normal,
+        dimension_type,
+    )
 }
 
 pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
@@ -145,6 +157,18 @@ fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) 
 }
 
 fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<World> {
+    create_test_world_with_key_and_dimension(
+        key,
+        difficulty,
+        &vanilla_dimension_types::OVERWORLD,
+    )
+}
+
+fn create_test_world_with_key_and_dimension(
+    key: Identifier,
+    difficulty: Difficulty,
+    dimension_type: DimensionTypeRef,
+) -> Arc<World> {
     init_vanilla_registry();
     let resources = test_world_resources();
     let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
@@ -152,9 +176,9 @@ fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<Wo
     let generation_settings = WorldGenerationSettings::from_generator_config(
         Identifier::vanilla_static("empty"),
         &generator_config,
-        vanilla_dimension_types::OVERWORLD.key.clone(),
-        vanilla_dimension_types::OVERWORLD.min_y,
-        vanilla_dimension_types::OVERWORLD.height,
+        dimension_type.key.clone(),
+        dimension_type.min_y,
+        dimension_type.height,
     );
 
     resources
@@ -162,7 +186,7 @@ fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<Wo
         .block_on(World::new_with_config(
             Arc::clone(&resources.runtime),
             key,
-            &vanilla_dimension_types::OVERWORLD,
+            dimension_type,
             0,
             WorldConfig {
                 storage: WorldStorageConfig::RamOnly,

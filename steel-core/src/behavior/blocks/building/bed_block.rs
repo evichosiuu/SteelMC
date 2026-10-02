@@ -6,9 +6,9 @@ use crate::{
         EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
         InventoryAccess, PlacementSource,
     },
-    entity::{Entity, ai::path::PathComputationType, dismount_helper},
+    entity::{Entity, ai::path::PathComputationType, damage::DamageSource, dismount_helper},
     player::Player,
-    world::{ScheduledTickAccess, World},
+    world::{ScheduledTickAccess, World, explosion::ExplosionBlockInteraction},
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
@@ -16,7 +16,7 @@ use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
-use steel_registry::vanilla_blocks;
+use steel_registry::{vanilla_blocks, vanilla_damage_types};
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
@@ -27,9 +27,6 @@ const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACIN
 const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 /// Behavior for beds
 ///
-/// TODO: Mirror vanilla `BedBlock.useWithoutItem` invalid-dimension explosion
-/// once Steel has a strict `World::explode` foundation: show the bed-rule error
-/// message, remove both bed halves, and use bad-respawn-point explosion damage.
 /// TODO: Mirror vanilla `BedBlock.kickVillagerOutOfBed` once villager sleeping
 /// entities exist.
 #[block_behavior]
@@ -359,7 +356,47 @@ impl BlockBehavior for BedBlock {
         };
 
         if world.dimension_type.bed_rule.explodes {
-            // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
+            let error_key = world
+                .dimension_type
+                .bed_rule
+                .error_message_key
+                .unwrap_or("block.minecraft.bed.no_sleep");
+            player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
+                key: error_key.into(),
+                fallback: None,
+                args: None,
+            }));
+
+            let facing = head_state.get_value(FACING);
+            let foot_pos = facing.opposite().relative(head_pos);
+
+            world.set_block(
+                head_pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+            let foot_state = world.get_block_state(foot_pos);
+            if foot_state.get_block() == self.block {
+                world.set_block(
+                    foot_pos,
+                    vanilla_blocks::AIR.default_state(),
+                    UpdateFlags::UPDATE_ALL,
+                );
+            }
+
+            let center = head_pos.0.as_dvec3() + DVec3::splat(0.5);
+            let damage_source = DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+                .with_source_position(center);
+
+            world.explode(
+                None,
+                Some(damage_source),
+                center,
+                5.0,
+                true,
+                ExplosionBlockInteraction::Destroy,
+            );
+
             return InteractionResult::SuccessServer;
         }
 
@@ -448,5 +485,66 @@ mod tests {
             BedBlock::velocity_after_fall(landing(DVec3::new(1.0, 0.5, -2.0), true, false));
 
         assert_eq!(velocity, DVec3::new(1.0, 0.5, -2.0));
+    }
+
+    #[test]
+    fn bed_explodes_in_nether_dimension() {
+        use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_dimension_types};
+        use steel_utils::ChunkPos;
+        use crate::behavior::BLOCK_BEHAVIORS;
+        use crate::test_support::{
+            TestPlayerBuilder, fresh_test_world_in_dimension, insert_ready_full_chunk,
+        };
+
+        init_vanilla_registry();
+        crate::behavior::init_behaviors();
+        let world = fresh_test_world_in_dimension(
+            "bed_explosion_test",
+            &vanilla_dimension_types::THE_NETHER,
+        );
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let foot_pos = BlockPos::new(0, 64, 0);
+        let head_pos = BlockPos::new(0, 64, 1);
+
+        let foot_state = vanilla_blocks::RED_BED
+            .default_state()
+            .set_value(BED_PART, BedPart::Foot)
+            .set_value(FACING, Direction::South);
+        let head_state = vanilla_blocks::RED_BED
+            .default_state()
+            .set_value(BED_PART, BedPart::Head)
+            .set_value(FACING, Direction::South);
+
+        world.set_block(foot_pos, foot_state, UpdateFlags::UPDATE_ALL);
+        world.set_block(head_pos, head_state, UpdateFlags::UPDATE_ALL);
+
+        let shared_player = TestPlayerBuilder::new(Arc::clone(&world), "exploder", 1).build();
+        let player = shared_player.as_player().unwrap();
+
+        let hit_result = BlockHitResult {
+            location: DVec3::ZERO,
+            direction: Direction::Up,
+            block_pos: foot_pos,
+            inside: false,
+            miss: false,
+            world_border_hit: false,
+        };
+        let mut inv_access =
+            InventoryAccess::new(Arc::clone(&player.inventory), steel_utils::types::InteractionHand::MainHand);
+
+        let bed_behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::RED_BED);
+        let res = bed_behavior.use_without_item(
+            foot_state,
+            &world,
+            foot_pos,
+            player,
+            &hit_result,
+            &mut inv_access,
+        );
+
+        assert_eq!(res, InteractionResult::SuccessServer);
+        assert!(world.get_block_state(foot_pos).is_air());
+        assert!(world.get_block_state(head_pos).is_air());
     }
 }
