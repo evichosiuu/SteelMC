@@ -158,3 +158,63 @@ pub fn corner_noise_3d(index: usize, x: f64, y: f64, z: f64, base: f64) -> f64 {
         t0 * t0 * dot(&GRADIENT[index], x, y, z)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_corner_noise_3d_negative_t0() {
+        // x^2 + y^2 + z^2 = 0.5^2 + 0.5^2 + 0.5^2 = 0.75
+        // base = 0.5 => t0 = 0.5 - 0.75 = -0.25 < 0.0
+        let res = corner_noise_3d(0, 0.5, 0.5, 0.5, 0.5);
+        assert_eq!(res, 0.0);
+    }
+
+    #[test]
+    fn test_corner_noise_3d_zero_t0() {
+        // x^2 + y^2 + z^2 = 0.5^2 + 0.5^2 + 0.5^2 = 0.75
+        // base = 0.75 => t0 = 0.75 - 0.75 = 0.0
+        let res = corner_noise_3d(0, 0.5, 0.5, 0.5, 0.75);
+        assert_eq!(res, 0.0);
+    }
+
+    #[test]
+    fn test_corner_noise_3d_positive_t0() {
+        // x = 0.1, y = 0.2, z = 0.3, base = 0.6
+        // x^2 + y^2 + z^2 = 0.01 + 0.04 + 0.09 = 0.14
+        // t0_initial = 0.6 - 0.14 = 0.46
+        // GRADIENT[0] = [1.0, 1.0, 0.0]
+        // dot = 0.1 * 1.0 + 0.2 * 1.0 + 0.3 * 0.0 = 0.3
+        // expected = 0.46^4 * 0.3 = 0.04477456 * 0.3 = 0.013432368
+        let x = 0.1;
+        let y = 0.2;
+        let z = 0.3;
+        let base = 0.6;
+        let res = corner_noise_3d(0, x, y, z, base);
+        let expected = (0.46_f64).powi(4) * 0.3;
+        assert!((res - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_corner_noise_3d_all_gradients() {
+        // Test that corner_noise_3d works for all 16 gradient indices
+        let x = 0.2;
+        let y = 0.1;
+        let z = 0.1;
+        let base = 0.5;
+        let dist_sq = x * x + y * y + z * z; // 0.04 + 0.01 + 0.01 = 0.06
+        let t0 = base - dist_sq; // 0.44
+        let factor = t0 * t0 * t0 * t0;
+
+        for i in 0..16 {
+            let res = corner_noise_3d(i, x, y, z, base);
+            let expected_dot = GRADIENT[i][0] * x + GRADIENT[i][1] * y + GRADIENT[i][2] * z;
+            let expected = factor * expected_dot;
+            assert!(
+                (res - expected).abs() < 1e-12,
+                "Failed for gradient index {i}"
+            );
+        }
+    }
+}
