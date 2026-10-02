@@ -210,6 +210,47 @@ mod lerp_tests {
         assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
         assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_inverse_lerp_standard() {
+        assert!((inverse_lerp(10.0, 10.0, 20.0) - 0.0).abs() < 1e-10);
+        assert!((inverse_lerp(20.0, 10.0, 20.0) - 1.0).abs() < 1e-10);
+        assert!((inverse_lerp(15.0, 10.0, 20.0) - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_inverse_lerp_extrapolation() {
+        assert!((inverse_lerp(5.0, 10.0, 20.0) - (-0.5)).abs() < 1e-10);
+        assert!((inverse_lerp(25.0, 10.0, 20.0) - 1.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_inverse_lerp_inverted_range() {
+        assert!((inverse_lerp(15.0, 20.0, 10.0) - 0.5).abs() < 1e-10);
+        assert!((inverse_lerp(20.0, 20.0, 10.0) - 0.0).abs() < 1e-10);
+        assert!((inverse_lerp(10.0, 20.0, 10.0) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_inverse_lerp_negative_range() {
+        assert!((inverse_lerp(-5.0, -10.0, 0.0) - 0.5).abs() < 1e-10);
+        assert!((inverse_lerp(-15.0, -20.0, -10.0) - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_inverse_lerp_zero_width() {
+        assert!(inverse_lerp(10.0, 5.0, 5.0).is_infinite());
+        assert!(inverse_lerp(5.0, 5.0, 5.0).is_nan());
+    }
+
+    #[test]
+    fn test_inverse_lerp_lerp_roundtrip() {
+        let a = 12.5;
+        let b = 87.3;
+        let val = 49.9;
+        let t = inverse_lerp(val, a, b);
+        assert!((lerp(t, a, b) - val).abs() < 1e-10);
+    }
 }
 /// Map a value from one range to another (unclamped).
 ///
